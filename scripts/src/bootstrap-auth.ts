@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { pool } from "@workspace/db";
+import { pool, MVP_TENANT_ID, syncMonitoredEntityFromEnv } from "@workspace/db";
 
 // Creates (or ensures) the admin auth user and links it to the MVP tenant via
 // the profiles table. Idempotent. Credentials are REQUIRED from the environment
@@ -9,7 +9,6 @@ import { pool } from "@workspace/db";
 //   ADMIN_PASSWORD (required)
 //
 // Run: pnpm --filter @workspace/scripts run bootstrap-auth
-const MVP_TENANT_ID = "00000000-0000-0000-0000-000000000001";
 
 async function main(): Promise<void> {
   const url = process.env.SUPABASE_URL;
@@ -62,6 +61,10 @@ async function main(): Promise<void> {
     [userId, MVP_TENANT_ID, email],
   );
   console.log(`✓ profile linked to tenant ${MVP_TENANT_ID}`);
+
+  if (await syncMonitoredEntityFromEnv(pool, MVP_TENANT_ID)) {
+    console.log(`✓ monitored entity synced from MONITORED_ENTITY_NAME`);
+  }
 
   await pool.end();
   console.log(`\nLogin with: ${email} / ${password}`);

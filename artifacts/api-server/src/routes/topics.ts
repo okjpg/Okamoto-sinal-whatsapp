@@ -48,12 +48,26 @@ router.get("/topics/:id", async (req: AuthedRequest, res) => {
     return;
   }
   const groups = await pool.query(
-    `select tg.chat_id, g.name, tg.message_count
+    `select tg.chat_id,
+            coalesce(
+              nullif(g.name, ''),
+              nullif(gn.chat_name, ''),
+              tg.chat_id
+            ) as name,
+            tg.message_count
        from topic_groups tg
        left join groups g on g.chat_id = tg.chat_id and g.tenant_id = $2
+       left join lateral (
+         select max(wm.chat_name) as chat_name
+           from whatsapp_messages wm
+          where wm.whatsapp_owner = $3
+            and wm.chat_type = 'group'
+            and wm.chat_id = tg.chat_id
+            and nullif(wm.chat_name, '') is not null
+       ) gn on true
       where tg.topic_id = $1
       order by tg.message_count desc nulls last`,
-    [id, t],
+    [id, t, OWNER],
   );
   const excerpts = await pool.query(
     `select m.message_id, m.chat_name, m.sender_name, m.message_created_at,

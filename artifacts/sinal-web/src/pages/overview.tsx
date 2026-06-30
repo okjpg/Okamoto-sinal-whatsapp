@@ -19,9 +19,11 @@ import {
   Inbox,
   Send,
   Mic,
+  ImageIcon,
+  FileText,
+  Users2,
   Flame,
   Lightbulb,
-  Users2,
   Star,
   TrendingUp,
   TrendingDown,
@@ -388,6 +390,27 @@ export default function Overview() {
               : "mensagens de voz no privado"
           }
           dot="var(--warn)"
+        />
+        <HardCard
+          icon={<ImageIcon className="w-3.5 h-3.5 text-[#60A5FA]" />}
+          label="Imagens"
+          value={overview?.images ?? 0}
+          hint={`fotos e imagens nos ${option.label}`}
+          dot="#60A5FA"
+        />
+        <HardCard
+          icon={<FileText className="w-3.5 h-3.5 text-[#FBBF24]" />}
+          hint={`PDFs e arquivos nos ${option.label}`}
+          label="Documentos"
+          value={overview?.documents ?? 0}
+          dot="#FBBF24"
+        />
+        <HardCard
+          icon={<Users2 className="w-3.5 h-3.5 text-[var(--accent)]" />}
+          label="Grupos"
+          value={overview?.groups ?? 0}
+          hint={`grupos com atividade nos ${option.label}`}
+          dot="var(--accent-dim)"
         />
       </div>
 

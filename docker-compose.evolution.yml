@@ -1,0 +1,31 @@
+# Evolution API — conector WhatsApp → Supabase
+#
+# O Sinal não fala com WhatsApp diretamente. Este conector usa Evolution API
+# (Baileys) para receber mensagens e gravar em whatsapp_messages.
+#
+# Documentação completa: docs/EVOLUTION_API.md
+
+services:
+  evolution-api:
+    image: evoapicloud/evolution-api:v2.3.7
+    container_name: evolution-api
+    restart: unless-stopped
+    ports:
+      - "8085:8080"
+    environment:
+      # Troque por uma chave forte
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:-troque-esta-chave}
+      SERVER_URL: http://localhost:8085
+      DEL_INSTANCE: "false"
+      # SQLite local (suficiente para 1 instância)
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: "sqlite"
+      DATABASE_CONNECTION_URI: "file:./evolution.db"
+      # Webhooks
+      WEBHOOK_GLOBAL_ENABLED: "false"
+      LOG_LEVEL: "ERROR"
+    volumes:
+      - evolution_data:/evolution/instances
+
+volumes:
+  evolution_data:

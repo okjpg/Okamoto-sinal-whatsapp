@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useLocation } from "wouter";
 import {
   useInvites,
+  useUpdateInviteStatus,
+  useInviteToTask,
   useResponseTime,
   useVolumeSummary,
   useIntelligence,
@@ -16,6 +18,7 @@ import {
   useCreateTask,
   type VolumeSparkPoint,
   type PendingContact,
+  type InviteItem,
 } from "@/lib/api";
 import {
   Loader2,
@@ -40,6 +43,9 @@ import {
   Check,
   BellOff,
   Plus,
+  ListPlus,
+  X,
+  MessageSquare,
 } from "lucide-react";
 import {
   Sheet,
@@ -208,6 +214,187 @@ function TopicDrawer({
         </div>
       </SheetContent>
     </Sheet>
+  );
+}
+
+function defaultInviteTaskTitle(inv: InviteItem): string {
+  const who = inv.name || inv.phone || "contato";
+  return inv.direction === "outbound"
+    ? `Acompanhar convite enviado para ${who}`
+    : `Responder convite de ${who}`;
+}
+
+function InviteThreadSheet({
+  chatId,
+  name,
+  onClose,
+}: {
+  chatId: string | null;
+  name: string | null;
+  onClose: () => void;
+}) {
+  const { data: thread, isLoading } = usePendingThread(chatId ?? undefined);
+
+  return (
+    <Sheet open={!!chatId} onOpenChange={(open) => !open && onClose()}>
+      <SheetContent className="w-[440px] max-w-[92vw] bg-[var(--surface)] border-l border-[var(--border)] p-0 flex flex-col sm:max-w-none">
+        <SheetHeader className="p-[20px_22px_16px] border-b border-[var(--border-soft)] space-y-0">
+          <SheetTitle className="font-display font-semibold text-[17px] truncate">
+            {name || chatId || "Conversa"}
+          </SheetTitle>
+          <SheetDescription className="text-[12.5px] text-[var(--muted)] mt-1">
+            Histórico recente da conversa
+          </SheetDescription>
+        </SheetHeader>
+        <div className="p-[18px_22px] overflow-y-auto flex-1 flex flex-col gap-[10px]">
+          {isLoading && (
+            <div className="flex justify-center py-10">
+              <Loader2 className="w-6 h-6 animate-spin text-[var(--accent)]" />
+            </div>
+          )}
+          {!isLoading &&
+            (thread ?? []).map((m) => (
+              <div
+                key={m.message_id}
+                className={`max-w-[92%] rounded-[10px] px-[12px] py-[8px] text-[12.5px] leading-[1.45] ${
+                  m.direction === "outbound"
+                    ? "self-end bg-[rgba(53,224,216,0.12)] border border-[rgba(53,224,216,0.2)]"
+                    : "self-start bg-[var(--surface-2)] border border-[var(--border-soft)]"
+                }`}
+              >
+                <div className="text-[10px] text-[var(--muted-2)] mb-[4px] font-mono">
+                  {m.direction === "outbound" ? "Você" : "Contato"}
+                </div>
+                {m.text}
+              </div>
+            ))}
+          {!isLoading && (thread ?? []).length === 0 && (
+            <div className="py-8 text-center text-[13px] text-[var(--muted-2)]">
+              Sem mensagens recentes.
+            </div>
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function InviteOpenRow({
+  inv,
+  inviteDir,
+  onOpen,
+}: {
+  inv: InviteItem;
+  inviteDir: "recebidos" | "feitos";
+  onOpen: (inv: InviteItem) => void;
+}) {
+  const updateStatus = useUpdateInviteStatus();
+  const toTask = useInviteToTask();
+  const chatId = inv.phone ?? "";
+  const busy = updateStatus.isPending || toTask.isPending;
+
+  function patchStatus(status: "resolvido" | "ignorado") {
+    if (!chatId) return;
+    updateStatus.mutate({
+      chatId,
+      status,
+      sourceMessageId: inv.message_id,
+      direction: inv.direction,
+      name: inv.name,
+      contactId: inv.contact_id,
+    });
+  }
+
+  function convertToTask() {
+    if (!chatId) return;
+    toTask.mutate({
+      chatId,
+      title: defaultInviteTaskTitle(inv),
+      direction: inv.direction === "outbound" ? "theirs" : "mine",
+      sourceMessageId: inv.message_id,
+      contactId: inv.contact_id,
+      name: inv.name,
+      inviteDirection: inv.direction,
+    });
+  }
+
+  function openConversation() {
+    if (!chatId) return;
+    onOpen(inv);
+  }
+
+  return (
+    <div className="py-[11px] border-b border-[var(--border-soft)] last:border-none">
+      <div className="flex items-start gap-[12px]">
+        <div className="w-[30px] h-[30px] rounded-[8px] flex items-center justify-center bg-[var(--surface-3)] text-[var(--accent)] shrink-0">
+          {inviteDir === "feitos" ? (
+            <Send className="w-4 h-4" />
+          ) : inv.category === "convite" ? (
+            <Mic className="w-4 h-4" />
+          ) : (
+            <Handshake className="w-4 h-4" />
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="font-semibold text-[13.5px] truncate flex items-center gap-[6px]">
+            {inviteDir === "feitos" && (
+              <span className="text-[11px] text-[var(--muted-2)] font-normal inline-flex items-center gap-[3px] shrink-0">
+                <CornerUpLeft className="w-3 h-3" /> para
+              </span>
+            )}
+            {inv.name || inv.phone}
+            <span className="text-[var(--muted-2)] font-normal">
+              — {inv.category}
+            </span>
+          </div>
+          <div className="text-[11.5px] text-[var(--muted)] mt-[2px] line-clamp-2">
+            {inv.summary || inv.text}
+          </div>
+        </div>
+        <span className="font-mono text-[10.5px] text-[var(--muted-2)] whitespace-nowrap shrink-0 pt-[2px]">
+          {timeAgo(inv.at)}
+        </span>
+      </div>
+      <div className="flex items-center gap-[6px] mt-[8px] ml-[42px] flex-wrap">
+        <button
+          type="button"
+          disabled={busy || !chatId}
+          onClick={() => patchStatus("resolvido")}
+          className="inline-flex items-center gap-[4px] text-[10.5px] font-semibold text-[var(--ok)] bg-[rgba(74,222,128,0.1)] border border-[rgba(74,222,128,0.25)] rounded-[6px] px-[8px] py-[4px] cursor-pointer hover:bg-[rgba(74,222,128,0.16)] disabled:opacity-50 transition-[0.14s]"
+        >
+          <Check className="w-3 h-3" /> Resolver
+        </button>
+        <button
+          type="button"
+          disabled={busy || !chatId}
+          onClick={() => patchStatus("ignorado")}
+          className="inline-flex items-center gap-[4px] text-[10.5px] font-semibold text-[var(--muted)] bg-[var(--surface-2)] border border-[var(--border-soft)] rounded-[6px] px-[8px] py-[4px] cursor-pointer hover:text-[var(--text)] hover:border-[var(--border)] disabled:opacity-50 transition-[0.14s]"
+        >
+          <X className="w-3 h-3" /> Ignorar
+        </button>
+        <button
+          type="button"
+          disabled={busy || !chatId}
+          onClick={convertToTask}
+          className="inline-flex items-center gap-[4px] text-[10.5px] font-semibold text-[var(--accent)] bg-[rgba(53,224,216,0.1)] border border-[rgba(53,224,216,0.22)] rounded-[6px] px-[8px] py-[4px] cursor-pointer hover:bg-[rgba(53,224,216,0.18)] disabled:opacity-50 transition-[0.14s]"
+        >
+          {toTask.isPending ? (
+            <Loader2 className="w-3 h-3 animate-spin" />
+          ) : (
+            <ListPlus className="w-3 h-3" />
+          )}
+          Tarefa
+        </button>
+        <button
+          type="button"
+          disabled={!chatId}
+          onClick={openConversation}
+          className="inline-flex items-center gap-[4px] text-[10.5px] font-semibold text-[var(--info)] bg-[rgba(96,165,250,0.1)] border border-[rgba(96,165,250,0.22)] rounded-[6px] px-[8px] py-[4px] cursor-pointer hover:bg-[rgba(96,165,250,0.16)] disabled:opacity-50 transition-[0.14s]"
+        >
+          <MessageSquare className="w-3 h-3" /> Abrir
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -473,6 +660,10 @@ export default function Privado() {
   );
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
+  const [inviteThread, setInviteThread] = useState<{
+    chatId: string;
+    name: string | null;
+  } | null>(null);
 
   const { data: invites, isLoading: loadingInv } = useInvites(days);
   const { data: responseTime, isLoading: loadingRt } = useResponseTime(days);
@@ -889,41 +1080,22 @@ export default function Privado() {
             </button>
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-x-[18px]">
-          {shownInvites.map((inv, i) => (
-            <div
-              key={inv.message_id}
-              className={`flex items-center gap-[12px] py-[11px] border-b border-[var(--border-soft)] ${i >= shownInvites.length - (shownInvites.length % 2 === 0 ? 2 : 1) ? "last:border-none" : ""}`}
-            >
-              <div className="w-[30px] h-[30px] rounded-[8px] flex items-center justify-center bg-[var(--surface-3)] text-[var(--accent)] shrink-0">
-                {inviteDir === "feitos" ? (
-                  <Send className="w-4 h-4" />
-                ) : inv.category === "convite" ? (
-                  <Mic className="w-4 h-4" />
-                ) : (
-                  <Handshake className="w-4 h-4" />
-                )}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="font-semibold text-[13.5px] truncate flex items-center gap-[6px]">
-                  {inviteDir === "feitos" && (
-                    <span className="text-[11px] text-[var(--muted-2)] font-normal inline-flex items-center gap-[3px] shrink-0">
-                      <CornerUpLeft className="w-3 h-3" /> para
-                    </span>
-                  )}
-                  {inv.name || inv.phone}
-                  <span className="text-[var(--muted-2)] font-normal">
-                    — {inv.category}
-                  </span>
-                </div>
-                <div className="text-[11.5px] text-[var(--muted)] truncate mt-[2px]">
-                  {inv.summary || inv.text}
-                </div>
-              </div>
-              <span className="font-mono text-[10.5px] text-[var(--muted-2)] whitespace-nowrap shrink-0">
-                {timeAgo(inv.at)}
-              </span>
-            </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-[18px]">
+          {shownInvites.map((inv) => (
+            <InviteOpenRow
+              key={inv.phone ?? inv.message_id}
+              inv={inv}
+              inviteDir={inviteDir}
+              onOpen={(item) => {
+                const chatId = item.phone ?? "";
+                if (!chatId) return;
+                if (pending?.some((p) => p.chat_id === chatId)) {
+                  setSelectedChatId(chatId);
+                  return;
+                }
+                setInviteThread({ chatId, name: item.name });
+              }}
+            />
           ))}
           {shownInvites.length === 0 && (
             <div className="py-6 text-center col-span-2">
@@ -1016,6 +1188,11 @@ export default function Privado() {
       <PendingDrawer
         contact={selected}
         onClose={() => setSelectedChatId(null)}
+      />
+      <InviteThreadSheet
+        chatId={inviteThread?.chatId ?? null}
+        name={inviteThread?.name ?? null}
+        onClose={() => setInviteThread(null)}
       />
       <TopicDrawer
         topic={selectedTopic}

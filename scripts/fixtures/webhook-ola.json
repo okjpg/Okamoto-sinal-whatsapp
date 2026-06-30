@@ -1,0 +1,15 @@
+{
+  "event": "messages.upsert",
+  "instance": "sinal-5531920052288",
+  "data": {
+    "key": {
+      "remoteJid": "553198982288@s.whatsapp.net",
+      "fromMe": false,
+      "id": "3A7863CAAB61A2E9C538"
+    },
+    "pushName": "Abel Odorico",
+    "message": { "conversation": "ola" },
+    "messageTimestamp": 1782703754
+  },
+  "server_url": "https://evoclaude.peep.cx"
+}

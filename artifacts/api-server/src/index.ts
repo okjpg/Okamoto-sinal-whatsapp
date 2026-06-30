@@ -1,6 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { startAutoRefreshScheduler } from "./lib/scheduler";
+import { pool, syncMonitoredEntityFromEnv } from "@workspace/db";
 
 const rawPort = process.env["PORT"];
 
@@ -23,6 +24,11 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
+  syncMonitoredEntityFromEnv(pool)
+    .then((updated) => {
+      if (updated) logger.info("Monitored entity synced from env");
+    })
+    .catch((err) => logger.warn({ err }, "Monitored entity sync failed"));
   // Kick off the 6-hourly automatic data refresh (incremental pipeline).
   startAutoRefreshScheduler();
 });

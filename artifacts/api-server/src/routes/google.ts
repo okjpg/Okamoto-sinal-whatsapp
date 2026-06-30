@@ -1,8 +1,30 @@
 import { Router, type IRouter } from "express";
 import crypto from "node:crypto";
-import { pool } from "@workspace/db";
+import { z } from "zod/v4";
+import {
+  pool,
+  getTenantGoogleCredentials,
+  saveTenantGoogleCredentials,
+  hasStoredGoogleCredentials,
+  maskGoogleClientId,
+  isGoogleReady,
+} from "@workspace/db";
 import { requireAuth, type AuthedRequest } from "../lib/auth";
+import { requireOwnerTenant } from "../lib/scope";
+import { upsertEnvVars, envFilePath } from "../lib/env-file";
 import * as g from "../lib/google";
+import { listUpcomingCalendarEvents } from "../lib/google-calendar";
+
+async function syncGoogleFromTenant(tenantId: string) {
+  const creds = await getTenantGoogleCredentials(pool, tenantId);
+  if (creds) g.applyGoogleEnv(creds);
+  return creds;
+}
+
+const googleCredentialsSchema = z.object({
+  clientId: z.string().min(12),
+  clientSecret: z.string().min(8),
+});
 
 const router: IRouter = Router();
 
@@ -68,6 +90,13 @@ router.get("/google/callback", async (req, res) => {
     return;
   }
 
+  const creds = await getTenantGoogleCredentials(pool, row.tenant_id);
+  if (!isGoogleReady(creds)) {
+    res.send(callbackPage("error"));
+    return;
+  }
+  g.applyGoogleEnv(creds);
+
   try {
     const tokens = await g.exchangeCode(code);
     const email = await g.getUserEmail(tokens.access_token);
@@ -103,26 +132,115 @@ router.get("/google/callback", async (req, res) => {
 
 // Everything below requires an authenticated app session (XHR from the iframe).
 router.use(requireAuth);
+router.use(async (req: AuthedRequest, _res, next) => {
+  try {
+    await syncGoogleFromTenant(req.auth!.tenantId);
+    next();
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.put("/google/credentials", requireOwnerTenant, async (req: AuthedRequest, res) => {
+  const parsed = googleCredentialsSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "invalid_credentials" });
+    return;
+  }
+
+  let saved;
+  try {
+    saved = await saveTenantGoogleCredentials(pool, req.auth!.tenantId, {
+      clientId: parsed.data.clientId.trim(),
+      clientSecret: parsed.data.clientSecret.trim(),
+    });
+  } catch (e) {
+    const msg = (e as Error).message;
+    if (msg === "invalid_client_id" || msg === "invalid_client_secret") {
+      res.status(400).json({ error: msg });
+      return;
+    }
+    if (msg === "credential_persist_failed") {
+      res.status(500).json({ error: "credential_persist_failed" });
+      return;
+    }
+    if (msg.includes("SESSION_SECRET")) {
+      res.status(500).json({ error: "session_secret_required" });
+      return;
+    }
+    throw e;
+  }
+
+  g.applyGoogleEnv(saved);
+
+  let envPath: string | null = null;
+  try {
+    envPath = upsertEnvVars({
+      GOOGLE_CLIENT_ID: saved.clientId,
+      GOOGLE_CLIENT_SECRET: saved.clientSecret,
+    });
+  } catch (e) {
+    req.log.error({ err: e }, "failed to write .env");
+    res.status(500).json({
+      error: "env_write_failed",
+      message: "Credenciais criptografadas no banco, mas falhou ao atualizar o .env.",
+      storedInDb: true,
+    });
+    return;
+  }
+
+  res.json({
+    ok: true,
+    configured: true,
+    clientIdMasked: maskGoogleClientId(saved.clientId),
+    envUpdated: true,
+    storedInDb: true,
+    envFilePath: envPath,
+    redirectUri: g.googleRedirectUri(),
+  });
+});
 
 // Connection status for the current tenant.
 router.get("/google/status", async (req: AuthedRequest, res) => {
   const t = req.auth!.tenantId;
+  const creds = await getTenantGoogleCredentials(pool, t);
+  const storedInDb = await hasStoredGoogleCredentials(pool, t);
   const { rows } = await pool.query(
-    `select email, (refresh_token is not null) as has_refresh
+    `select email, scope, refresh_token
        from google_oauth_tokens where tenant_id = $1`,
     [t],
   );
-  const row = rows[0];
-  res.json({ connected: !!row, email: row?.email ?? null });
+  const row = rows[0] as { email?: string; scope?: string } | undefined;
+  res.json({
+    configured: isGoogleReady(creds),
+    redirectUri: g.googleRedirectUri(),
+    clientIdMasked: maskGoogleClientId(creds?.clientId),
+    storedInDb,
+    envFilePath: envFilePath(),
+    connected: !!row,
+    email: row?.email ?? null,
+    contacts: row ? g.hasContactsScope(row.scope) : false,
+    calendar: row ? g.hasCalendarScope(row.scope) : false,
+  });
+});
+
+const connectBodySchema = z.object({
+  service: z.enum(["contacts", "calendar", "all"]).optional(),
 });
 
 // Create a one-time state row and return the Google consent URL. The frontend
 // opens this URL in a real tab (Google cannot be framed).
 router.post("/google/connect-url", async (req: AuthedRequest, res) => {
+  const creds = await getTenantGoogleCredentials(pool, req.auth!.tenantId);
+  if (!isGoogleReady(creds)) {
+    res.status(503).json({ error: "google_not_configured" });
+    return;
+  }
+  const parsed = connectBodySchema.safeParse(req.body ?? {});
+  const service = parsed.success ? (parsed.data.service ?? "contacts") : "contacts";
   const t = req.auth!.tenantId;
   const state = crypto.randomBytes(24).toString("hex");
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
-  // Opportunistic cleanup of stale states for this tenant.
   await pool.query(
     `delete from google_oauth_states where tenant_id = $1 and expires_at < now()`,
     [t],
@@ -132,7 +250,7 @@ router.post("/google/connect-url", async (req: AuthedRequest, res) => {
      values ($1, $2, $3, $4, $5)`,
     [state, t, req.auth!.userId, req.auth!.email, expiresAt],
   );
-  res.json({ url: g.buildAuthUrl(state) });
+  res.json({ url: g.buildAuthUrl(state, service) });
 });
 
 // Disconnect: remove stored tokens for the tenant.
@@ -253,6 +371,40 @@ router.post("/google/contacts/:id/export", async (req: AuthedRequest, res) => {
     );
     res.json({ ok: true, resourceName });
   }
+});
+
+// Upcoming calendar events (requires calendar scope on the stored token).
+router.get("/google/calendar/events", async (req: AuthedRequest, res) => {
+  const t = req.auth!.tenantId;
+  const days = Math.min(Number(req.query.days ?? 14), 60);
+  const limit = Math.min(Number(req.query.limit ?? 30), 100);
+
+  const tokenRow = await pool.query<{ scope: string | null }>(
+    `select scope from google_oauth_tokens where tenant_id = $1`,
+    [t],
+  );
+  if (tokenRow.rows.length === 0) {
+    res.status(409).json({ error: "google_not_connected" });
+    return;
+  }
+  if (!g.hasCalendarScope(tokenRow.rows[0]?.scope)) {
+    res.status(409).json({ error: "google_calendar_not_connected" });
+    return;
+  }
+
+  let accessToken: string;
+  try {
+    accessToken = await g.getValidAccessToken(t);
+  } catch {
+    res.status(409).json({ error: "google_not_connected" });
+    return;
+  }
+
+  const events = await listUpcomingCalendarEvents(accessToken, {
+    days,
+    maxResults: limit,
+  });
+  res.json({ events, days, count: events.length });
 });
 
 export default router;

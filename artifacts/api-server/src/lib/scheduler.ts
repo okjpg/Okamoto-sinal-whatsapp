@@ -6,6 +6,7 @@ import {
   RefreshAlreadyRunningError,
 } from "@workspace/db";
 import { logger } from "./logger";
+import { sendRefreshAlerts } from "./refresh-alerts";
 
 // In-process automatic data refresh. Runs the same incremental pipeline as the
 // manual "Atualizar" button every 6 hours so the dashboard stays current even
@@ -36,6 +37,7 @@ export function startAutoRefreshScheduler(): void {
       });
       logger.info({ runId: run.id }, "auto-refresh started");
       const done = await executeRefreshRun(pool, run);
+      await sendRefreshAlerts(MVP_TENANT_ID, done);
       logger.info(
         { runId: done.id, status: done.status },
         "auto-refresh finished",

@@ -1,9 +1,11 @@
-import { ReactNode, useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
-import { useLogout, useMe } from "@/lib/api";
+import { useMe } from "@/lib/api";
 import { useTimeWindow, TIME_WINDOWS } from "@/lib/timeWindow";
 import CommandPalette from "@/components/CommandPalette";
 import RefreshControl from "@/components/RefreshControl";
+import NotificationBell from "@/components/NotificationBell";
+import { NotificationProvider } from "@/hooks/use-notifications";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -39,13 +41,15 @@ const relItems = [
   ) },
   { href: "/conectores", label: "Conectores", icon: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 7 4.5 11.5a4.95 4.95 0 0 0 7 7L16 14M15 17l4.5-4.5a4.95 4.95 0 0 0-7-7L8 10" strokeLinecap="round" strokeLinejoin="round"/></svg>
+  ) },
+  { href: "/configuracoes", label: "IA", icon: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 3v2M12 19v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M3 12h2M19 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4" strokeLinecap="round"/><circle cx="12" cy="12" r="4"/></svg>
   ) }
 ];
 
-export default function AppShell({ children }: { children: ReactNode }) {
+export default function AppShell({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const { data: me } = useMe();
-  const logout = useLogout();
   const { days, setDays, option } = useTimeWindow();
   const [paletteOpen, setPaletteOpen] = useState(false);
 
@@ -61,6 +65,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   }, []);
 
   return (
+    <NotificationProvider>
     <div className="grid grid-cols-[236px_1fr] h-screen bg-[var(--bg)] text-[var(--text)] overflow-hidden font-sans">
       {/* Sidebar */}
       <aside className="bg-[var(--surface)] border-r border-[var(--border-soft)] flex flex-col p-[18px_14px] gap-[4px] h-screen">
@@ -117,16 +122,25 @@ export default function AppShell({ children }: { children: ReactNode }) {
         })}
 
         <div className="mt-auto flex flex-col gap-[8px]">
-          <div onClick={() => logout.mutate()} className="flex items-center gap-[10px] p-[9px_10px] border border-[var(--border)] rounded-[var(--radius-sm)] bg-[var(--surface-2)] cursor-pointer hover:border-[var(--accent-dim)] transition-[0.16s]">
+          <Link
+            href="/perfil"
+            className={`flex items-center gap-[10px] p-[9px_10px] border rounded-[var(--radius-sm)] bg-[var(--surface-2)] cursor-pointer transition-[0.16s] ${
+              location === "/perfil"
+                ? "border-[var(--accent-dim)]"
+                : "border-[var(--border)] hover:border-[var(--accent-dim)]"
+            }`}
+          >
             <div className="w-[26px] h-[26px] rounded-[7px] bg-gradient-to-br from-[#3a3a48] to-[#23232c] flex items-center justify-center font-bold text-[12px] text-[var(--accent)]">
               {me?.user?.email?.charAt(0).toUpperCase() || "?"}
             </div>
             <div className="min-w-0">
               <div className="text-[12.5px] font-semibold leading-[1.2] truncate">{me?.user?.email || "Conta"}</div>
-              <div className="text-[10.5px] text-[var(--muted-2)]">Workspace · plano Owner</div>
+              <div className="text-[10.5px] text-[var(--muted-2)]">
+                {me?.user?.isOwner ? "Perfil · Owner" : "Perfil · conta"}
+              </div>
             </div>
-            <svg className="ml-auto text-[var(--muted-2)]" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m7 9 5 5 5-5" strokeLinecap="round"/></svg>
-          </div>
+            <svg className="ml-auto text-[var(--muted-2)]" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m9 18 6-6-6-6" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          </Link>
         </div>
       </aside>
 
@@ -134,7 +148,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
       <main className="h-screen overflow-y-auto relative flex flex-col">
         <div className="sticky top-0 z-20 backdrop-blur-[12px] bg-[rgba(10,10,12,0.72)] border-b border-[var(--border-soft)] flex items-center gap-[16px] p-[14px_26px]">
           <h1 className="font-display font-semibold text-[21px] tracking-[0.005em]">
-            {[...navItems, ...relItems].find(i => i.href === location)?.label || "Sinal"}
+            {[...navItems, ...relItems, { href: "/perfil", label: "Perfil" }].find(i => i.href === location)?.label || "Sinal"}
           </h1>
           <div className="flex items-center gap-[8px] text-[var(--muted)] text-[13.5px]"></div>
           <div className="flex-1"></div>
@@ -177,9 +191,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
             </DropdownMenuContent>
           </DropdownMenu>
           
-          <div className="w-[34px] h-[34px] rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface-2)] flex items-center justify-center text-[var(--muted)] cursor-pointer hover:text-[var(--text)] hover:border-[var(--accent-dim)]">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9" strokeLinecap="round" strokeLinejoin="round"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0" strokeLinecap="round"/></svg>
-          </div>
+          <NotificationBell />
         </div>
 
         <div className="p-[24px_26px_60px] animate-in fade-in slide-in-from-bottom-2 duration-300">
@@ -188,5 +200,6 @@ export default function AppShell({ children }: { children: ReactNode }) {
       </main>
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
     </div>
+    </NotificationProvider>
   );
 }

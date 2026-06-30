@@ -4,11 +4,43 @@ const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo";
 const PEOPLE_BASE = "https://people.googleapis.com/v1";
 
-export const GOOGLE_SCOPES = [
-  "https://www.googleapis.com/auth/contacts",
+const BASE_SCOPES = [
   "https://www.googleapis.com/auth/userinfo.email",
   "openid",
+] as const;
+
+export const GOOGLE_CONTACTS_SCOPES = [
+  "https://www.googleapis.com/auth/contacts",
+] as const;
+
+export const GOOGLE_CALENDAR_SCOPES = [
+  "https://www.googleapis.com/auth/calendar.readonly",
+] as const;
+
+/** @deprecated use scopesForService */
+export const GOOGLE_SCOPES = [
+  ...BASE_SCOPES,
+  ...GOOGLE_CONTACTS_SCOPES,
 ];
+
+export type GoogleConnectService = "contacts" | "calendar" | "all";
+
+export interface GoogleOAuthCredentials {
+  clientId: string;
+  clientSecret: string;
+}
+
+export function applyGoogleEnv(creds: GoogleOAuthCredentials): void {
+  process.env.GOOGLE_CLIENT_ID = creds.clientId;
+  process.env.GOOGLE_CLIENT_SECRET = creds.clientSecret;
+}
+
+export function isGoogleConfigured(
+  creds?: GoogleOAuthCredentials | null,
+): boolean {
+  if (creds) return Boolean(creds.clientId && creds.clientSecret);
+  return Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
+}
 
 export function googleClientId(): string {
   const v = process.env.GOOGLE_CLIENT_ID;
@@ -22,22 +54,56 @@ export function googleClientSecret(): string {
   return v;
 }
 
-// The shared proxy serves the API at /api on the public domain. Google requires
-// this to EXACTLY match the redirect URI registered in the Cloud console.
+// Must EXACTLY match a redirect URI registered in Google Cloud Console.
 export function googleRedirectUri(): string {
+  const explicit = process.env.GOOGLE_REDIRECT_URI?.trim();
+  if (explicit) return explicit;
+
+  const publicUrl = process.env.SINAL_PUBLIC_URL?.replace(/\/$/, "");
+  if (publicUrl) return `${publicUrl}/api/google/callback`;
+
   const domain =
     process.env.REPLIT_DOMAINS?.split(",")[0]?.trim() ||
     process.env.REPLIT_DEV_DOMAIN;
-  if (!domain) throw new Error("No REPLIT domain available for redirect URI");
-  return `https://${domain}/api/google/callback`;
+  if (domain) return `https://${domain}/api/google/callback`;
+
+  const port = process.env.API_PORT ?? process.env.PORT ?? "8787";
+  return `http://localhost:${port}/api/google/callback`;
 }
 
-export function buildAuthUrl(state: string): string {
+export function scopesForService(service: GoogleConnectService): string[] {
+  const scopes = new Set<string>(BASE_SCOPES);
+  if (service === "contacts" || service === "all") {
+    for (const s of GOOGLE_CONTACTS_SCOPES) scopes.add(s);
+  }
+  if (service === "calendar" || service === "all") {
+    for (const s of GOOGLE_CALENDAR_SCOPES) scopes.add(s);
+  }
+  return [...scopes];
+}
+
+export function hasContactsScope(scope: string | null | undefined): boolean {
+  return hasScope(scope, GOOGLE_CONTACTS_SCOPES[0]!);
+}
+
+export function hasCalendarScope(scope: string | null | undefined): boolean {
+  return hasScope(scope, GOOGLE_CALENDAR_SCOPES[0]!);
+}
+
+function hasScope(scope: string | null | undefined, required: string): boolean {
+  if (!scope) return false;
+  return scope.split(/\s+/).some((s) => s === required);
+}
+
+export function buildAuthUrl(
+  state: string,
+  service: GoogleConnectService = "contacts",
+): string {
   const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
   url.searchParams.set("client_id", googleClientId());
   url.searchParams.set("redirect_uri", googleRedirectUri());
   url.searchParams.set("response_type", "code");
-  url.searchParams.set("scope", GOOGLE_SCOPES.join(" "));
+  url.searchParams.set("scope", scopesForService(service).join(" "));
   url.searchParams.set("access_type", "offline");
   url.searchParams.set("prompt", "consent");
   url.searchParams.set("include_granted_scopes", "true");

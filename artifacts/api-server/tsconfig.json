@@ -17,6 +17,9 @@
     },
     {
       "path": "../../lib/api-zod"
+    },
+    {
+      "path": "../../lib/evolution"
     }
   ]
 }

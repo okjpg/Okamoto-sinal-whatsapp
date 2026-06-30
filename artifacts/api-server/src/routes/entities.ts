@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod/v4";
-import { pool } from "@workspace/db";
+import { pool, syncMonitoredEntityFromEnv } from "@workspace/db";
 import { requireAuth, type AuthedRequest } from "../lib/auth";
 
 const router: IRouter = Router();
@@ -9,6 +9,7 @@ router.use(requireAuth);
 // Monitored entities (you / each product) used for mention detection.
 router.get("/entities", async (req: AuthedRequest, res) => {
   const t = req.auth!.tenantId;
+  await syncMonitoredEntityFromEnv(pool, t).catch(() => {});
   const { rows } = await pool.query(
     `select e.*,
             (select count(*)::int from mentions m where m.entity_id = e.id) as mention_count

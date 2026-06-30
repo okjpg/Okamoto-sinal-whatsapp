@@ -10,17 +10,21 @@ import tasksRouter from "./tasks";
 import savedRouter from "./saved";
 import entitiesRouter from "./entities";
 import mediaRouter from "./media";
+import evolutionRouter from "./evolution";
+import aiRouter from "./ai";
 import googleRouter from "./google";
 import searchRouter from "./search";
 import refreshRouter from "./refresh";
+import settingsRouter from "./settings";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
 router.use(authRouter);
-// Mounted before the authed routers: its public OAuth callback must be reachable
-// without a session. Each authed router calls requireAuth with no path, so the
-// first one (metrics) would otherwise 401 every unauthenticated request.
+// Public webhook must be registered before googleRouter: google uses router.use(requireAuth)
+// without a path, which 401s any request that reaches that router without a prior match.
+router.use(evolutionRouter);
+router.use(aiRouter);
 router.use(googleRouter);
 router.use(metricsRouter);
 router.use(topicsRouter);
@@ -33,5 +37,6 @@ router.use(entitiesRouter);
 router.use(mediaRouter);
 router.use(searchRouter);
 router.use(refreshRouter);
+router.use(settingsRouter);
 
 export default router;

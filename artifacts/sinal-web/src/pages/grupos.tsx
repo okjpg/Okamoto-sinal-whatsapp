@@ -6,7 +6,12 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "
 
 export default function Grupos() {
   const { data: groups, isLoading: loadingG } = useGroups(20);
-  const { data: topics, isLoading: loadingT } = useTopics({ scope: "group", crossgroup: true });
+  const { data: crossGroupTopics, isLoading: loadingCross } = useTopics({
+    scope: "group",
+    crossgroup: true,
+  });
+  const { data: groupTopics, isLoading: loadingAll } = useTopics({ scope: "group" });
+  const loadingT = loadingCross || loadingAll;
   const setSupport = useSetGroupSupport();
   
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
@@ -42,7 +47,7 @@ export default function Grupos() {
       </div>
 
       <div className="grid grid-cols-3 gap-[14px] mb-[24px]">
-        {topics?.slice(0, 3).map((topic, i) => (
+        {crossGroupTopics?.slice(0, 3).map((topic, i) => (
           <div key={i} onClick={() => setSelectedTopic(topic)} className="bg-[var(--surface-2)] border border-[var(--border-soft)] rounded-[var(--radius)] p-[16px] transition-[0.16s] cursor-pointer relative overflow-hidden group hover:border-[var(--accent-dim)] hover:-translate-y-0.5">
             <div className="absolute inset-y-0 left-0 w-[3px] bg-gradient-to-b from-[var(--accent)] to-[var(--accent-dim)] opacity-70 group-hover:opacity-100" />
             <div className="font-semibold text-[14.5px] mb-[9px] leading-[1.3] pl-[6px]">{topic.label} <span className="inline-flex items-center gap-[6px] font-mono text-[11px] text-[var(--accent)] bg-[var(--accent-glow)] px-[9px] py-[3px] rounded-[20px] ml-[6px]"><Zap className="w-3 h-3" /> em {topic.group_count} grupos</span></div>
@@ -56,7 +61,7 @@ export default function Grupos() {
             <button onClick={(e) => e.stopPropagation()} className="text-[11px] font-sans font-semibold text-[var(--accent)] bg-[var(--accent-glow)] border-none px-[10px] py-[4px] rounded-[7px] cursor-pointer inline-flex items-center gap-[5px] transition-[0.14s] whitespace-nowrap mt-[12px] ml-[6px] hover:bg-[rgba(53,224,216,0.22)]"><Bookmark className="w-3 h-3" /> salvar</button>
           </div>
         ))}
-        {!topics?.length && <div className="col-span-3 py-8 text-center text-[var(--muted-2)] text-[13px]">Nenhuma pauta cruzada detectada.</div>}
+        {!crossGroupTopics?.length && <div className="col-span-3 py-8 text-center text-[var(--muted-2)] text-[13px]">Nenhuma pauta cruzada detectada.</div>}
       </div>
 
       <div className="grid grid-cols-[1.4fr_1fr] gap-[16px] mb-[16px]">
@@ -67,7 +72,7 @@ export default function Grupos() {
             <span className="inline-block text-[11px] text-[var(--muted-2)] border border-[var(--border)] px-[8px] py-[2px] rounded-[20px] ml-[8px] font-mono">todas as conversas</span>
           </div>
           <div className="flex flex-col">
-            {topics?.map((topic, i) => (
+            {groupTopics?.map((topic, i) => (
               <div key={i} onClick={() => setSelectedTopic(topic)} className="flex items-start gap-[13px] py-[13px] border-b border-[var(--border-soft)] last:border-none cursor-pointer transition-[0.12s] hover:bg-[var(--surface-2)] -mx-[10px] px-[10px] rounded-[8px]">
                 <span className="font-mono text-[12px] text-[var(--muted-2)] w-[18px] pt-[2px]">{(i + 1).toString().padStart(2, '0')}</span>
                 <div className="flex-1">
@@ -80,6 +85,9 @@ export default function Grupos() {
                 <span className="font-mono text-[12px] text-[var(--accent)] whitespace-nowrap pt-[2px] inline-flex items-center gap-[4px]"><Zap className="w-3 h-3" /> {topic.message_count}</span>
               </div>
             ))}
+            {!groupTopics?.length && (
+              <div className="py-8 text-center text-[var(--muted-2)] text-[13px]">Nenhum tópico de grupo ainda. Envie mensagens nos grupos e clique em Atualizar.</div>
+            )}
           </div>
         </div>
 
@@ -89,7 +97,7 @@ export default function Grupos() {
             <h3 className="text-[13px] font-semibold text-[var(--muted)] uppercase tracking-[0.02em] flex items-center gap-[7px]"><Flame className="w-3.5 h-3.5" /> Trending nos grupos</h3>
           </div>
           <div className="flex flex-col">
-            {topics?.slice(0, 5).map((item, i) => (
+            {groupTopics?.slice(0, 5).map((item, i) => (
               <div key={i} onClick={() => setSelectedTopic(item)} className="flex items-center gap-[12px] py-[11px] border-b border-[var(--border-soft)] last:border-none cursor-pointer transition-[0.12s] hover:bg-[var(--surface-2)] -mx-[10px] px-[10px] rounded-[8px]">
                 <span className="font-mono text-[12px] text-[var(--muted-2)] w-[16px]">{(i + 1).toString().padStart(2, '0')}</span>
                 <span className="flex-1 font-medium text-[13.5px] text-[var(--text)] truncate">{item.label}</span>

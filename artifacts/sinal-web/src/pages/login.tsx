@@ -1,17 +1,23 @@
 import { useState } from "react";
+import { Link, useLocation } from "wouter";
 import { useLogin } from "@/lib/api";
 import { Loader2, Activity } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import PasswordInput from "@/components/PasswordInput";
 
 export default function Login() {
+  const [, setLocation] = useLocation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const login = useLogin();
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    login.mutate({ email, password });
+    login.mutate(
+      { email, password },
+      { onSuccess: () => setLocation("/") },
+    );
   };
 
   return (
@@ -31,7 +37,7 @@ export default function Login() {
         <form onSubmit={handleSubmit} className="w-full bg-[#121217] border border-[#1D1D25] rounded-[14px] p-6 shadow-xl">
           {login.error && (
             <div className="bg-[rgba(248,113,113,0.14)] text-[#F87171] text-[13px] px-4 py-3 rounded-lg mb-6 border border-[rgba(248,113,113,0.2)]">
-              {(login.error as any).message || "Falha ao entrar. Verifique suas credenciais."}
+              {(login.error as Error).message || "Falha ao entrar. Verifique suas credenciais."}
             </div>
           )}
 
@@ -44,7 +50,7 @@ export default function Login() {
                 autoComplete="username"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
-                placeholder="bruno@exemplo.com"
+                placeholder="seu@email.com"
                 className="bg-[#181820] border-[#26262F] focus-visible:border-[#35E0D8] focus-visible:ring-1 focus-visible:ring-[#35E0D8] h-11 text-sm placeholder:text-[#5E5E6B]"
                 required
               />
@@ -53,16 +59,19 @@ export default function Login() {
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <label className="text-[11px] uppercase tracking-[0.08em] font-semibold text-[#8C8C99]">Senha</label>
+                <Link
+                  href="/esqueci-senha"
+                  className="text-[11px] text-[#35E0D8] hover:underline"
+                >
+                  Esqueci a senha
+                </Link>
               </div>
-              <Input 
-                type="password" 
-                name="password"
-                autoComplete="current-password"
+              <PasswordInput
                 value={password}
-                onChange={e => setPassword(e.target.value)}
+                onChange={setPassword}
+                autoComplete="current-password"
                 placeholder="••••••••"
                 className="bg-[#181820] border-[#26262F] focus-visible:border-[#35E0D8] focus-visible:ring-1 focus-visible:ring-[#35E0D8] h-11 text-sm placeholder:text-[#5E5E6B]"
-                required
               />
             </div>
           </div>
