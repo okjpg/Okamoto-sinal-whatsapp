@@ -8,6 +8,7 @@ import {
   useClearCompletedTasks,
   useTopics,
   useUnanswered,
+  useGroupUnanswered,
   useInvites,
   useUpdateInviteStatus,
   useInviteToTask,
@@ -530,7 +531,7 @@ export default function Salvos() {
   const { data: tasks, isLoading: loadingT } = useTasks();
   const { data: saved, isLoading: loadingS } = useSaved();
   const { data: topics, isLoading: loadingTopics } = useTopics({ scope: "group", crossgroup: true });
-  const { data: unanswered, isLoading: loadingUa } = useUnanswered(10);
+  const { data: unanswered, isLoading: loadingUa } = useGroupUnanswered(10);
   
   const updateTask = useUpdateTask();
   const createTask = useCreateTask();
@@ -617,11 +618,14 @@ export default function Salvos() {
                   <div className="flex-1">
                     <div className="text-[13.5px] font-medium leading-[1.4]">“{item.text || item.summary}”</div>
                     <div className="text-[11px] text-[var(--muted-2)] font-mono mt-[4px] flex gap-[9px] items-center">
-                      <span className="bg-[var(--surface-3)] text-[var(--muted)] px-[7px] py-[1px] rounded-[5px]">{item.name || item.phone}</span>
+                      <span className="bg-[var(--surface-3)] text-[var(--muted)] px-[7px] py-[1px] rounded-[5px]">{item.chat_name || item.name}</span>
                     </div>
                   </div>
                 </div>
               ))}
+              {!unanswered?.length && (
+                <div className="py-4 text-center text-[var(--muted-2)] text-[13px]">Nenhuma pendência em grupos.</div>
+              )}
             </div>
           </div>
         </div>

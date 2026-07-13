@@ -26,3 +26,7 @@ export const db = drizzle(pool, { schema });
 export * from "./schema";
 export * from "./refresh";
 export * from "./pipeline";
+export * from "./ai-settings";
+export * from "./secrets-crypto";
+export * from "./monitored-entity";
+export * from "./smtp-settings";

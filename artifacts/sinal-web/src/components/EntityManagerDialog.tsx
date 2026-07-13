@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -92,6 +92,10 @@ function EntityRow({ entity }: { entity: Entity }) {
   const [confirming, setConfirming] = useState(false);
   const [name, setName] = useState(entity.name);
 
+  useEffect(() => {
+    setName(entity.name);
+  }, [entity.name]);
+
   const commitName = () => {
     const v = name.trim();
     if (!v) {
@@ -118,7 +122,8 @@ function EntityRow({ entity }: { entity: Entity }) {
               }
             }}
             aria-label={`Nome de ${entity.name}`}
-            className="text-[13.5px] font-semibold text-[var(--text)] bg-transparent border border-transparent rounded-[6px] px-[6px] py-[2px] -ml-[6px] outline-none hover:border-[var(--border)] focus:border-[var(--accent-dim)] focus:bg-[var(--surface-2)] transition-[0.14s] max-w-[180px]"
+            title="Clique para editar o nome"
+            className="text-[13.5px] font-semibold text-[var(--text)] bg-transparent border border-transparent rounded-[6px] px-[6px] py-[2px] -ml-[6px] outline-none hover:border-[var(--border)] focus:border-[var(--accent-dim)] focus:bg-[var(--surface-2)] transition-[0.14s] max-w-[180px] cursor-text"
           />
           <select
             value={entity.type}
@@ -205,7 +210,7 @@ function NewEntityForm() {
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Nome (ex.: Bruno, OpenClaw, Hermes)"
+            placeholder="Nome (ex.: Abel Odorico, OpenClaw)"
             className="flex-1 text-[13px] bg-[var(--surface-2)] border border-[var(--border)] rounded-[8px] px-[11px] py-[7px] text-[var(--text)] placeholder:text-[var(--muted-2)] outline-none focus:border-[var(--accent-dim)]"
           />
           <select
@@ -229,7 +234,7 @@ function NewEntityForm() {
               submit();
             }
           }}
-          placeholder="Palavras-chave separadas por vírgula (ex.: bruno, bruno okamoto)"
+            placeholder="Palavras-chave separadas por vírgula (ex.: abel, abel odorico)"
           className="text-[13px] bg-[var(--surface-2)] border border-[var(--border)] rounded-[8px] px-[11px] py-[7px] text-[var(--text)] placeholder:text-[var(--muted-2)] outline-none focus:border-[var(--accent-dim)]"
         />
         <button
@@ -257,18 +262,18 @@ export default function EntityManagerDialog() {
       <DialogTrigger asChild>
         <button className="inline-flex items-center gap-[6px] text-[12.5px] px-[13px] py-[6px] rounded-[20px] border border-[var(--border)] bg-[var(--surface-2)] text-[var(--muted)] cursor-pointer transition-[0.14s] font-medium hover:text-[var(--text)] hover:border-[var(--accent-dim)]">
           <Tags className="w-3.5 h-3.5" />
-          Palavras-chave
+          Entidade monitorada
         </button>
       </DialogTrigger>
       <DialogContent className="max-w-[640px] max-h-[80vh] overflow-y-auto bg-[var(--surface)] border-[var(--border-soft)]">
         <DialogHeader>
           <DialogTitle className="text-[var(--text)]">
-            Palavras-chave de menções
+            Entidade monitorada
           </DialogTitle>
           <DialogDescription className="text-[var(--muted)]">
-            Cadastre nomes e palavras-chave para mapear menções. As menções
-            classificadas (elogio, crítica, lead…) aparecem após a próxima
-            análise por IA.
+            Clique no nome para editar quem você monitora. Adicione palavras-chave
+            para a IA detectar menções indiretas. @-mentions do WhatsApp são
+            capturadas automaticamente.
           </DialogDescription>
         </DialogHeader>
 

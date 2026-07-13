@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import type { Pool } from "pg";
+import { buildTenantAiEnv } from "./ai-settings";
 
 // Shared orchestration for the incremental data-refresh pipeline. Both the
 // dashboard "Atualizar" button (via the API server) and the 6-hourly automation
@@ -20,7 +21,7 @@ import type { Pool } from "pg";
 // double-spend AI budget.
 
 export type RefreshStatus = "running" | "completed" | "failed";
-export type RefreshTrigger = "manual" | "scheduled";
+export type RefreshTrigger = "manual" | "scheduled" | "webhook" | "quick";
 
 export interface RefreshJobResult {
   label: string;
@@ -55,27 +56,64 @@ interface Job {
   env?: Record<string, string>;
 }
 
-// Same jobs (and cheap-provider defaults) the standalone refresh-all script
-// used, kept here so the API and the scheduler share one definition.
-const JOBS: Job[] = [
+const CLASSIFY_JOB_ENV: Record<string, string> = {
+  CLASSIFY_PROVIDER: process.env.CLASSIFY_PROVIDER ?? "openrouter",
+  CONCURRENCY: process.env.CONCURRENCY ?? "6",
+  BATCH_SIZE: process.env.BATCH_SIZE ?? "15",
+  PAGE: process.env.PAGE ?? "900",
+};
+
+const MENTIONS_JOB_ENV: Record<string, string> = {
+  MENTION_SAMPLE: process.env.MENTION_SAMPLE ?? "500",
+  MENTION_RECENT_HOURS: process.env.MENTION_RECENT_HOURS ?? "72",
+};
+
+// Full pipeline — manual button + 6h scheduler.
+export const FULL_REFRESH_JOBS: Job[] = [
+  { label: "Classificar mensagens novas", script: "backfill-text-full", env: CLASSIFY_JOB_ENV },
+  { label: "Transcrever áudios", script: "backfill-audio-transcription" },
+  { label: "Normalizar tipos de mídia", script: "backfill-raw-type" },
+  { label: "Atualizar contatos (CRM + volume)", script: "backfill-contacts" },
+  { label: "Sincronizar nomes de grupos", script: "sync-group-names" },
+  { label: "Sincronizar tasks automáticas", script: "sync-tasks-from-enrichment" },
+  { label: "Sincronizar itens salvos", script: "sync-saved-from-enrichment" },
+  { label: "Reconstruir pautas / tópicos", script: "build-topics" },
+  { label: "Detectar menções", script: "build-mentions", env: MENTIONS_JOB_ENV },
+];
+
+// Lighter cycle after Evolution webhook — skips expensive topic rebuild.
+export const INCREMENTAL_REFRESH_JOBS: Job[] = [
   {
     label: "Classificar mensagens novas",
     script: "backfill-text-full",
     env: {
-      CLASSIFY_PROVIDER: process.env.CLASSIFY_PROVIDER ?? "openrouter",
-      CONCURRENCY: process.env.CONCURRENCY ?? "6",
-      BATCH_SIZE: process.env.BATCH_SIZE ?? "15",
-      PAGE: process.env.PAGE ?? "900",
+      ...CLASSIFY_JOB_ENV,
+      PAGE: "120",
+      MAX_MESSAGES: process.env.INCREMENTAL_MAX_MESSAGES ?? "80",
     },
   },
+  {
+    label: "Transcrever áudios",
+    script: "backfill-audio-transcription",
+    env: { MAX_MESSAGES: process.env.INCREMENTAL_AUDIO_MAX ?? "8" },
+  },
+  { label: "Normalizar tipos de mídia", script: "backfill-raw-type" },
   { label: "Atualizar contatos (CRM + volume)", script: "backfill-contacts" },
-  { label: "Reconstruir pautas / tópicos", script: "build-topics" },
+  { label: "Sincronizar tasks automáticas", script: "sync-tasks-from-enrichment" },
+  { label: "Sincronizar itens salvos", script: "sync-saved-from-enrichment" },
   {
     label: "Detectar menções",
     script: "build-mentions",
-    env: { MENTION_SAMPLE: process.env.MENTION_SAMPLE ?? "120" },
+    env: {
+      MENTION_SAMPLE: process.env.INCREMENTAL_MENTION_SAMPLE ?? "300",
+      MENTION_RECENT_HOURS: process.env.MENTION_RECENT_HOURS ?? "72",
+    },
   },
 ];
+
+// Same jobs (and cheap-provider defaults) the standalone refresh-all script
+// used, kept here so the API and the scheduler share one definition.
+const JOBS: Job[] = FULL_REFRESH_JOBS;
 
 // A running cycle older than this is assumed dead (process crashed before it
 // could finalize) and is reclaimed so the lock never wedges forever.
@@ -200,11 +238,14 @@ function spawnJob(job: Job): Promise<number> {
 export async function executeRefreshRun(
   pool: Pool,
   run: RefreshRun,
+  opts?: { jobs?: Job[] },
 ): Promise<RefreshRun> {
+  const jobs = opts?.jobs ?? JOBS;
   try {
+    const tenantAiEnv = await buildTenantAiEnv(pool, run.tenantId);
     const results: RefreshJobResult[] = [];
-    for (const job of JOBS) {
-      const code = await spawnJob(job);
+    for (const job of jobs) {
+      const code = await spawnJob({ ...job, env: { ...tenantAiEnv, ...job.env } });
       results.push({ label: job.label, script: job.script, code });
     }
     const failed = results.filter((r) => r.code !== 0);

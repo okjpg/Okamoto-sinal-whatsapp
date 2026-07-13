@@ -60,10 +60,32 @@ export interface AuthUser {
   userId: string;
   tenantId: string;
   email: string | null;
+  isOwner?: boolean;
+}
+
+export interface UserProfile {
+  email: string | null;
+  tenantId: string;
+  isOwner: boolean;
+  memberSince: string | null;
+  smtpConfigured: boolean;
+}
+
+export interface SmtpSettingsStatus {
+  configured: boolean;
+  storedInDb: boolean;
+  envFilePath: string | null;
+  host: string | null;
+  port: number;
+  secure: boolean;
+  user: string | null;
+  userMasked: string | null;
+  fromEmail: string | null;
+  fromName: string;
 }
 
 export type RefreshStatus = "running" | "completed" | "failed";
-export type RefreshTrigger = "manual" | "scheduled";
+export type RefreshTrigger = "manual" | "scheduled" | "webhook" | "quick";
 export interface RefreshJobResult {
   label: string;
   script: string;
@@ -113,6 +135,17 @@ export interface UnansweredItem {
   category: string | null;
   summary: string | null;
   requires_reply: boolean | null;
+}
+export interface GroupUnansweredItem {
+  chat_id: string;
+  chat_name: string | null;
+  name: string | null;
+  text: string | null;
+  summary: string | null;
+  is_question: boolean | null;
+  requires_reply: boolean | null;
+  last_at: string | null;
+  message_id: string;
 }
 export type InviteStatus = "aberto" | "resolvido" | "ignorado";
 export interface InviteItem {
@@ -204,6 +237,9 @@ export interface OverviewResp {
   received: number;
   sent: number;
   audios: number;
+  images: number;
+  documents: number;
+  groups: number;
   audioMinutes: number | null;
 }
 export interface VolumeComparePoint {
@@ -536,6 +572,8 @@ export const qk = {
     ["metrics", "private", "trending", limit] as const,
   unanswered: (limit?: number) =>
     ["metrics", "private", "unanswered", limit] as const,
+  groupUnanswered: (limit?: number) =>
+    ["metrics", "groups", "unanswered", limit] as const,
   invites: (days?: number) => ["metrics", "private", "invites", days] as const,
   labels: ["labels"] as const,
   topics: (scope?: string, crossgroup?: boolean) =>
@@ -562,8 +600,11 @@ export const qk = {
   mediaByGroup: (limit?: number) => ["media", "by-group", limit] as const,
   mediaMessages: (f: MediaMessagesFilter | null) => ["media", "messages", f] as const,
   googleStatus: ["google", "status"] as const,
+  googleCalendarEvents: (days?: number) => ["google", "calendar", "events", days ?? 14] as const,
+  evolutionStatus: ["evolution", "status"] as const,
   search: (q: string) => ["search", q] as const,
   refreshStatus: ["refresh", "status"] as const,
+  refreshLive: ["refresh", "live"] as const,
 };
 
 /* ----------------------------- Auth ----------------------------- */
@@ -581,12 +622,22 @@ export function useLogin() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (data: { email: string; password: string }) =>
-      apiFetch<{ user: AuthUser }>("/auth/login", {
-        method: "POST",
-        body: JSON.stringify(data),
-      }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.me });
+      apiFetch<{ user: { id: string; email: string | null; tenantId: string } }>(
+        "/auth/login",
+        {
+          method: "POST",
+          body: JSON.stringify(data),
+        },
+      ),
+    onSuccess: (data) => {
+      qc.setQueryData(qk.me, {
+        user: {
+          userId: data.user.id,
+          tenantId: data.user.tenantId,
+          email: data.user.email,
+        },
+      });
+      void qc.invalidateQueries({ queryKey: qk.me });
     },
   });
 }
@@ -599,6 +650,110 @@ export function useLogout() {
     onSuccess: () => {
       qc.clear();
     },
+  });
+}
+
+export function useProfile() {
+  return useQuery({
+    queryKey: ["auth", "profile"],
+    queryFn: () => apiFetch<UserProfile>("/auth/profile"),
+  });
+}
+
+export function useChangePassword() {
+  return useMutation({
+    mutationFn: (body: {
+      currentPassword: string;
+      newPassword: string;
+      confirmPassword: string;
+    }) =>
+      apiFetch<{ ok: true }>("/auth/password", {
+        method: "PUT",
+        body: JSON.stringify(body),
+      }),
+  });
+}
+
+export function useForgotPassword() {
+  return useMutation({
+    mutationFn: (body: { email: string }) =>
+      apiFetch<{ ok: true; message?: string }>("/auth/forgot-password", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+  });
+}
+
+export function useResetPassword() {
+  return useMutation({
+    mutationFn: (body: {
+      token: string;
+      newPassword: string;
+      confirmPassword: string;
+    }) =>
+      apiFetch<{ ok: true }>("/auth/reset-password", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+  });
+}
+
+export function useSmtpSettings(enabled = true) {
+  return useQuery({
+    queryKey: ["settings", "smtp"],
+    queryFn: () => apiFetch<SmtpSettingsStatus>("/settings/smtp"),
+    enabled,
+  });
+}
+
+export function useSaveSmtpSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: {
+      host: string;
+      port?: number;
+      secure?: boolean;
+      user?: string;
+      password?: string;
+      fromEmail: string;
+      fromName?: string;
+    }) =>
+      apiFetch<{
+        ok: true;
+        configured: boolean;
+        storedInDb: boolean;
+        envUpdated: boolean;
+        envFilePath?: string;
+        user?: string | null;
+      }>("/settings/smtp", {
+        method: "PUT",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["settings", "smtp"] });
+    },
+  });
+}
+
+export function useTestSmtp() {
+  return useMutation({
+    mutationFn: (body?: {
+      host?: string;
+      port?: number;
+      secure?: boolean;
+      user?: string;
+      password?: string;
+      fromEmail?: string;
+      fromName?: string;
+      to?: string;
+    }) =>
+      apiFetch<{ ok: boolean; to?: string; message?: string }>(
+        "/settings/smtp/test",
+        {
+          method: "POST",
+          body: JSON.stringify(body ?? {}),
+        },
+      ),
   });
 }
 
@@ -624,6 +779,40 @@ export function useStartRefresh() {
       apiFetch<{ run: RefreshRun }>("/refresh", { method: "POST" }),
     onSettled: () => {
       qc.invalidateQueries({ queryKey: qk.refreshStatus });
+      qc.invalidateQueries({ queryKey: qk.refreshLive });
+    },
+  });
+}
+
+export interface RefreshLiveStats {
+  lastMessageAt: string | null;
+  lastRefreshAt: string | null;
+  refreshRunning: boolean;
+  pendingUnanswered: number;
+  openTasks: number;
+  mentionsLast24h: number;
+  expiredSnoozes: number;
+  unenrichedRecent: number;
+}
+
+export function useRefreshLive() {
+  return useQuery({
+    queryKey: qk.refreshLive,
+    queryFn: () => apiFetch<RefreshLiveStats>("/refresh/live"),
+    refetchInterval: (query) =>
+      query.state.data?.refreshRunning ? 3000 : 30_000,
+    staleTime: 15_000,
+  });
+}
+
+export function useStartQuickRefresh() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiFetch<{ run: RefreshRun }>("/refresh/quick", { method: "POST" }),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: qk.refreshStatus });
+      qc.invalidateQueries({ queryKey: qk.refreshLive });
     },
   });
 }
@@ -696,6 +885,17 @@ export function useUnanswered(limit = 50) {
     queryFn: () =>
       apiFetch<{ unanswered: UnansweredItem[] }>(
         `/metrics/private/unanswered${qs({ limit })}`,
+      ),
+    select: (d) => d.unanswered,
+  });
+}
+
+export function useGroupUnanswered(limit = 50) {
+  return useQuery({
+    queryKey: qk.groupUnanswered(limit),
+    queryFn: () =>
+      apiFetch<{ unanswered: GroupUnansweredItem[] }>(
+        `/metrics/groups/unanswered${qs({ limit })}`,
       ),
     select: (d) => d.unanswered,
   });
@@ -1573,8 +1773,28 @@ export function useMediaMessages(filter: MediaMessagesFilter | null) {
 /* ----------------------------- Google Contacts ----------------------------- */
 
 export interface GoogleStatus {
+  configured: boolean;
+  redirectUri: string | null;
+  clientIdMasked: string | null;
+  storedInDb: boolean;
+  envFilePath: string | null;
   connected: boolean;
   email: string | null;
+  contacts: boolean;
+  calendar: boolean;
+}
+
+export interface GoogleCalendarEvent {
+  id: string;
+  summary: string | null;
+  description: string | null;
+  location: string | null;
+  htmlLink: string | null;
+  start: string | null;
+  end: string | null;
+  allDay: boolean;
+  calendarId: string;
+  calendarSummary: string | null;
 }
 
 export interface GoogleImportResult {
@@ -1588,14 +1808,43 @@ export function useGoogleStatus() {
   return useQuery({
     queryKey: qk.googleStatus,
     queryFn: () => apiFetch<GoogleStatus>("/google/status"),
+    retry: 1,
+    staleTime: 10_000,
+  });
+}
+
+export function useSaveGoogleCredentials() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { clientId: string; clientSecret: string }) =>
+      apiFetch<{
+        ok: true;
+        configured: boolean;
+        clientIdMasked: string | null;
+        envUpdated: boolean;
+        storedInDb: boolean;
+        envFilePath?: string;
+        redirectUri: string;
+      }>("/google/credentials", {
+        method: "PUT",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.googleStatus });
+    },
   });
 }
 
 // Returns the Google consent URL. The frontend must open it in a real browser
 // tab (Google cannot be displayed inside the embedded preview iframe). The OAuth
 // state is stored server-side so the callback works without cookies.
-export function getGoogleConnectUrl() {
-  return apiFetch<{ url: string }>("/google/connect-url", { method: "POST" });
+export type GoogleConnectService = "contacts" | "calendar" | "all";
+
+export function getGoogleConnectUrl(service: GoogleConnectService = "contacts") {
+  return apiFetch<{ url: string }>("/google/connect-url", {
+    method: "POST",
+    body: JSON.stringify({ service }),
+  });
 }
 
 export function useGoogleDisconnect() {
@@ -1603,7 +1852,10 @@ export function useGoogleDisconnect() {
   return useMutation({
     mutationFn: () =>
       apiFetch<{ ok: true }>("/google/disconnect", { method: "POST" }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.googleStatus }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.googleStatus });
+      qc.invalidateQueries({ queryKey: ["google", "calendar"] });
+    },
   });
 }
 
@@ -1616,6 +1868,18 @@ export function useGoogleImport() {
   });
 }
 
+export function useGoogleCalendarEvents(enabled: boolean, days = 14) {
+  return useQuery({
+    queryKey: qk.googleCalendarEvents(days),
+    queryFn: () =>
+      apiFetch<{ events: GoogleCalendarEvent[]; count: number; days: number }>(
+        `/google/calendar/events${qs({ days })}`,
+      ),
+    enabled,
+    select: (d) => d.events,
+  });
+}
+
 export function useExportContactToGoogle() {
   const qc = useQueryClient();
   return useMutation({
@@ -1625,5 +1889,322 @@ export function useExportContactToGoogle() {
         { method: "POST" },
       ),
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.contacts }),
+  });
+}
+
+/* ----------------------------- WhatsApp (Evolution API) ----------------------------- */
+
+export interface EvolutionMessageMirror {
+  firstMessageAt: string | null;
+  lastMessageAt: string | null;
+  totalMessages: number;
+  privateChats: number;
+  groupChats: number;
+}
+
+export interface EvolutionInstanceDetails {
+  id: string | null;
+  name: string;
+  connectionStatus: string;
+  ownerJid: string | null;
+  profileName: string | null;
+  integration: string | null;
+  number: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  disconnectionAt: string | null;
+  disconnectionReasonCode: number | null;
+  disconnectionMessage: string | null;
+}
+
+export interface EvolutionServerInfo {
+  version: string | null;
+  clientName: string | null;
+  host: string;
+}
+
+export interface EvolutionStatus {
+  configured: boolean;
+  connected: boolean;
+  state: string;
+  instance: string | null;
+  webhookUrl: string | null;
+  webhookConfigured: boolean;
+  webhookRegistered: boolean;
+  webhookRegisteredUrl: string | null;
+  instanceExists: boolean;
+  suggestedInstanceName: string;
+  ownerPhone: string;
+  server: EvolutionServerInfo | null;
+  instanceDetails: EvolutionInstanceDetails | null;
+  mirror: EvolutionMessageMirror;
+  phoneMatchesOwner: boolean | null;
+  lastWebhookAt: string | null;
+  minutesSinceLastWebhook: number | null;
+  minutesSinceLastMessage: number | null;
+  webhookStale: boolean;
+  webhookStaleReason: string | null;
+}
+
+export interface EvolutionInstancePayload {
+  instanceName?: string;
+  recreate?: boolean;
+}
+
+export interface EvolutionQrcode {
+  base64: string | null;
+  pairingCode: string | null;
+  state: string;
+  instance: string;
+  webhookRegistered?: boolean;
+  webhookConfigured?: boolean;
+  created?: boolean;
+  alreadyExists?: boolean;
+  alreadyConnected?: boolean;
+  message?: string | null;
+}
+
+export interface EvolutionInstanceResult {
+  ok: true;
+  instance: string;
+  state: string;
+  base64: string | null;
+  pairingCode: string | null;
+  created?: boolean;
+  alreadyExists?: boolean;
+  message?: string | null;
+}
+
+const INSTANCE_STORAGE_KEY = "sinal-evolution-instance";
+
+export function getStoredEvolutionInstance(): string | null {
+  try {
+    return localStorage.getItem(INSTANCE_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setStoredEvolutionInstance(name: string): void {
+  try {
+    localStorage.setItem(INSTANCE_STORAGE_KEY, name);
+  } catch {
+    /* ignore */
+  }
+}
+
+function instanceQs(instanceName?: string) {
+  return instanceName ? qs({ instanceName }) : "";
+}
+
+export function useEvolutionStatus(
+  instanceName?: string,
+  options?: { poll?: boolean },
+) {
+  return useQuery({
+    queryKey: [...qk.evolutionStatus, instanceName ?? "default"],
+    queryFn: () =>
+      apiFetch<EvolutionStatus>(`/evolution/status${instanceQs(instanceName)}`),
+    refetchInterval: options?.poll ? 3000 : false,
+    retry: 1,
+    staleTime: 5_000,
+  });
+}
+
+export function useCreateEvolutionInstance() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: EvolutionInstancePayload = {}) =>
+      apiFetch<EvolutionInstanceResult>("/evolution/instance", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.evolutionStatus }),
+  });
+}
+
+export function useEvolutionConnect() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: EvolutionInstancePayload = {}) =>
+      apiFetch<EvolutionQrcode>("/evolution/connect", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.evolutionStatus }),
+  });
+}
+
+export function useEvolutionDisconnect() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: EvolutionInstancePayload = {}) =>
+      apiFetch<{ ok: true }>("/evolution/disconnect", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.evolutionStatus }),
+  });
+}
+
+export function useRegisterEvolutionWebhook() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: EvolutionInstancePayload = {}) =>
+      apiFetch<{ ok: true; webhookUrl: string; webhookRegistered: boolean }>(
+        "/evolution/webhook/register",
+        {
+          method: "POST",
+          body: JSON.stringify(payload),
+        },
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.evolutionStatus }),
+  });
+}
+
+export function fetchEvolutionQrcode(instanceName?: string) {
+  return apiFetch<EvolutionQrcode>(
+    `/evolution/qrcode${instanceQs(instanceName)}`,
+  );
+}
+
+/* ----------------------------- IA / OpenRouter ----------------------------- */
+
+export type AiSelectionMode =
+  | "auto_free"
+  | "pick_free"
+  | "pick_paid"
+  | "by_task";
+
+export type AiTaskType =
+  | "classify"
+  | "cluster"
+  | "mentions"
+  | "contact_analysis"
+  | "audio"
+  | "image"
+  | "video";
+
+export interface TenantAiSettings {
+  mode: AiSelectionMode;
+  selectedFreeModels: string[];
+  selectedPaidModels: string[];
+  byTask: Partial<Record<AiTaskType, string>>;
+}
+
+export interface OpenRouterModelDto {
+  id: string;
+  name: string;
+  description?: string;
+  isFree: boolean;
+  modality: string;
+  contextLength?: number;
+  useCase?: string;
+  useCaseLabel?: string;
+  qualityRank?: number | null;
+  qualityLabel?: string | null;
+  pricingPrompt?: number;
+  pricingCompletion?: number;
+  priceLabel?: string;
+}
+
+export interface AiConnectionTestResult {
+  ok: boolean;
+  storedInDb: boolean;
+  apiKeyMasked: string | null;
+  baseUrl: string | null;
+  modelsCount?: number;
+  freeCount?: number;
+  paidCount?: number;
+  latencyMs?: number;
+  label?: string | null;
+  error?: string;
+  message?: string;
+}
+
+export function useAiStatus() {
+  return useQuery({
+    queryKey: ["ai", "status"],
+    queryFn: () =>
+      apiFetch<{
+        openRouterConfigured: boolean;
+        apiKeyMasked: string | null;
+        baseUrl: string;
+        storedInDb: boolean;
+        envFilePath: string;
+      }>("/ai/status"),
+  });
+}
+
+export function useAiSettings() {
+  return useQuery({
+    queryKey: ["ai", "settings"],
+    queryFn: () =>
+      apiFetch<{
+        settings: TenantAiSettings;
+        resolvedModels: Record<string, string | null>;
+        autoFreeDefaults: string[];
+      }>("/ai/settings"),
+  });
+}
+
+export function useAiModels(
+  filter: "all" | "free" | "paid" = "all",
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: ["ai", "models", filter],
+    queryFn: () =>
+      apiFetch<{ models: OpenRouterModelDto[]; fetchedAt?: string }>(
+        `/ai/models?filter=${filter}`,
+      ),
+    enabled,
+    staleTime: 60_000,
+  });
+}
+
+export function useTestAiConnection() {
+  return useMutation({
+    mutationFn: (body?: { apiKey?: string; baseUrl?: string }) =>
+      apiFetch<AiConnectionTestResult>("/ai/test-connection", {
+        method: "POST",
+        body: JSON.stringify(body ?? {}),
+      }),
+  });
+}
+
+export function useSaveAiCredentials() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { apiKey: string; baseUrl?: string }) =>
+      apiFetch<{
+        ok: true;
+        openRouterConfigured: boolean;
+        apiKeyMasked: string | null;
+        baseUrl: string;
+        envUpdated: boolean;
+        storedInDb: boolean;
+        envFilePath?: string;
+      }>("/ai/credentials", {
+        method: "PUT",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["ai"] });
+    },
+  });
+}
+
+export function useSaveAiSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Partial<TenantAiSettings>) =>
+      apiFetch<{ settings: TenantAiSettings }>("/ai/settings", {
+        method: "PUT",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["ai"] });
+    },
   });
 }

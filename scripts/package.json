@@ -6,23 +6,44 @@
   "scripts": {
     "hello": "tsx ./src/hello.ts",
     "migrate": "tsx ./src/migrate.ts",
+    "create-whatsapp-messages": "tsx ./src/create-whatsapp-messages.ts",
+    "evolution-webhook": "tsx ./src/evolution-webhook.ts",
+    "evolution-setup": "tsx ./src/evolution-setup.ts",
     "bootstrap-auth": "tsx ./src/bootstrap-auth.ts",
     "classify-sample": "tsx ./src/classify-sample.ts",
     "backfill-text-full": "tsx ./src/backfill-text-full.ts",
+    "backfill-audio-transcription": "tsx ./src/backfill-audio-transcription.ts",
+    "backfill-raw-type": "tsx ./src/backfill-raw-type.ts",
     "backfill-contacts": "tsx ./src/backfill-contacts.ts",
+    "sync-group-names": "tsx ./src/sync-group-names.ts",
+    "sync-tasks-from-enrichment": "tsx ./src/sync-tasks-from-enrichment.ts",
+    "sync-saved-from-enrichment": "tsx ./src/sync-saved-from-enrichment.ts",
+    "backfill-evolution-media": "tsx ./src/backfill-evolution-media.ts",
     "db-stats": "tsx ./src/db-stats.ts",
+    "test-db": "tsx ./src/test-db-connection.ts",
     "build-topics": "tsx ./src/build-topics.ts",
     "build-mentions": "tsx ./src/build-mentions.ts",
     "refresh-all": "tsx ./src/refresh-all.ts",
+    "daily-digest": "tsx ./src/daily-digest.ts",
+    "telegram-setup": "tsx ./src/telegram-setup.ts",
+    "telegram-poll": "tsx ./src/telegram-poll.ts",
+    "telegram-whatsapp": "tsx ./src/telegram-whatsapp.ts",
+    "diagnose-whatsapp": "tsx ./src/diagnose-whatsapp.ts",
+    "fix-webhook": "tsx ./src/fix-webhook.ts",
+    "export-brand": "tsx ./src/export-brand-png.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.107.0",
     "@workspace/ai": "workspace:*",
-    "@workspace/db": "workspace:*"
+    "@workspace/db": "workspace:*",
+    "@workspace/evolution": "workspace:*",
+    "pg": "^8.20.0"
   },
   "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "@types/node": "catalog:",
+    "sharp": "^0.34.3",
     "tsx": "catalog:"
   }
 }

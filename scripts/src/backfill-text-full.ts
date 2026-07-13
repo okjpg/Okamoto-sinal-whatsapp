@@ -151,6 +151,14 @@ async function main(): Promise<void> {
     console.log(
       `  +${written} (total ${grandTotal}) — ${rate.toFixed(1)} msg/s, ${elapsed.toFixed(0)}s elapsed`,
     );
+
+    // Avoid infinite loop when classification fails for every batch in a page.
+    if (written === 0) {
+      console.error(
+        "  ! Nenhuma mensagem classificada nesta página — interrompendo (verifique OpenRouter/credenciais).",
+      );
+      break;
+    }
   }
 
   const { rows: byCat } = await pool.query<{ category: string; n: string }>(

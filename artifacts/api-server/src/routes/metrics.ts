@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod/v4";
 import { pool } from "@workspace/db";
 import { TOPIC_BLACKLIST, GROUP_TOPIC_BLACKLIST } from "@workspace/ai";
-import { OWNER, requireOwnerTenant } from "../lib/scope";
+import { OWNER, requireOwnerTenant, excludeSupportGroupsSql } from "../lib/scope";
 import { requireAuth, type AuthedRequest } from "../lib/auth";
 
 const router: IRouter = Router();
@@ -160,6 +160,41 @@ router.get("/metrics/private/unanswered", async (req: AuthedRequest, res) => {
   res.json({ unanswered: rows });
 });
 
+// Group pendencies: inbound questions / requires_reply with no owner reply yet.
+router.get("/metrics/groups/unanswered", async (req: AuthedRequest, res) => {
+  const limit = Math.min(Number(req.query.limit ?? 50), 200);
+  const t = tenant(req);
+  const params: unknown[] = [OWNER];
+  const tenantIdx = params.push(t);
+  const supportClause = excludeSupportGroupsSql("m", t, params);
+  const limitIdx = params.push(limit);
+  const { rows } = await pool.query(
+    `select m.chat_id, m.chat_name,
+            coalesce(nullif(m.sender_name,''), m.chat_name) as name,
+            coalesce(nullif(m.message,''), m.caption, m.transcription, e.summary) as text,
+            e.summary, e.is_question, e.requires_reply,
+            m.message_created_at as last_at, m.message_id
+       from message_enrichment e
+       join whatsapp_messages m
+         on m.message_id = e.message_id and m.whatsapp_owner = $1
+      where e.tenant_id = $${tenantIdx}
+        and e.chat_type = 'group'
+        and m.direction = 'inbound'
+        and (e.requires_reply is true or e.is_question is true)
+        and not exists (
+          select 1 from whatsapp_messages r
+           where r.whatsapp_owner = $1
+             and r.chat_id = m.chat_id
+             and r.direction = 'outbound'
+             and r.message_created_at > m.message_created_at
+        )${supportClause}
+      order by m.message_created_at desc
+      limit $${limitIdx}`,
+    params,
+  );
+  res.json({ unanswered: rows });
+});
+
 // Invites & opportunities block (convite / oportunidade/parceria).
 // Deduped to ONE entry per contact (DM partner, keyed by the effective DM phone:
 // coalesce(nullif(chat_id,''), nullif(contact_phone,''))), aggregating that
@@ -182,7 +217,10 @@ router.get("/metrics/private/invites", async (req: AuthedRequest, res) => {
          join whatsapp_messages m on m.message_id = e.message_id
           and m.whatsapp_owner = $2
         where e.tenant_id = $1 and e.chat_type = 'private'
-          and e.category in ('convite','oportunidade/parceria')
+          and (
+            e.category in ('convite','oportunidade/parceria')
+            or (e.category in ('networking', 'suporte/dúvida') and e.requires_reply is true)
+          )
           and coalesce(nullif(m.chat_id,''), nullif(m.contact_phone,'')) is not null
           and m.message_created_at >= now() - ($3 || ' days')::interval
      ),
@@ -728,23 +766,44 @@ router.post(
   },
 );
 
-// Overview hard data (private inbox snapshot). Returns the raw, period-aware
-// counts that head the redesigned Visão Geral: received, sent and number of
-// audio messages. Audio minutes are only reported when the ingestion metadata
-// carries a duration — the current source has none, so audioMinutes is null and
-// the UI omits it (rather than showing a fabricated number).
+// counts that head the redesigned Visão Geral: received, sent, audios, images,
+// documents and active groups in the selected period.
 router.get("/metrics/overview", async (req: AuthedRequest, res) => {
   const days = parseDays(req.query.days, 7);
   const { rows } = await pool.query(
     `select
-        count(*) filter (where direction = 'inbound')::int as received,
-        count(*) filter (where direction = 'outbound')::int as sent,
         count(*) filter (
-          where media_url is not null
-            and metadata->>'raw_type' = 'AudioMessage'
-        )::int as audios
+          where chat_type = 'private' and direction = 'inbound'
+        )::int as received,
+        count(*) filter (
+          where chat_type = 'private' and direction = 'outbound'
+        )::int as sent,
+        count(*) filter (
+          where chat_type = 'private'
+            and (
+              metadata->>'raw_type' = 'AudioMessage'
+              or lower(coalesce(message_type, '')) like any(array['%audio%','%ptt%'])
+              or coalesce(media_mime_type, '') like 'audio/%'
+            )
+        )::int as audios,
+        count(*) filter (
+          where metadata->>'raw_type' = 'ImageMessage'
+             or lower(coalesce(message_type, '')) like '%image%'
+             or coalesce(media_mime_type, '') like 'image/%'
+        )::int as images,
+        count(*) filter (
+          where metadata->>'raw_type' = 'DocumentMessage'
+             or lower(coalesce(message_type, '')) like '%document%'
+             or (
+               coalesce(media_mime_type, '') like 'application/%'
+               and coalesce(media_mime_type, '') not like 'application/json%'
+             )
+        )::int as documents,
+        count(distinct chat_id) filter (
+          where chat_type = 'group' and chat_id is not null
+        )::int as groups
        from whatsapp_messages
-      where whatsapp_owner = $1 and chat_type = 'private'
+      where whatsapp_owner = $1
         and message_created_at >= now() - ($2 || ' days')::interval`,
     [OWNER, String(days)],
   );
@@ -753,8 +812,9 @@ router.get("/metrics/overview", async (req: AuthedRequest, res) => {
     received: r.received ?? 0,
     sent: r.sent ?? 0,
     audios: r.audios ?? 0,
-    // No duration is stored in whatsapp_messages.metadata for AudioMessage, so
-    // we cannot compute minutes. Keep this null; the UI hides the metric.
+    images: r.images ?? 0,
+    documents: r.documents ?? 0,
+    groups: r.groups ?? 0,
     audioMinutes: null,
   });
 });

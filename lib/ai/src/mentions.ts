@@ -1,13 +1,8 @@
-import OpenAI from "openai";
-import { CLASSIFY_MODEL } from "./classify";
+import { getAiClient, modelForTask } from "./openrouter";
 
-let client: OpenAI | null = null;
-function getClient(): OpenAI {
-  if (!client) {
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) throw new Error("OPENAI_API_KEY is required.");
-    client = new OpenAI({ apiKey });
-  }
+let client: ReturnType<typeof getAiClient> | null = null;
+function getClient() {
+  if (!client) client = getAiClient();
   return client;
 }
 
@@ -34,10 +29,14 @@ export interface MentionResult {
   sentiment: "positivo" | "neutro" | "negativo";
 }
 
-function systemPrompt(entityName: string): string {
-  return `Você analisa menções a "${entityName}" em mensagens de WhatsApp (grupos e privado). Para CADA mensagem, decida se ela é uma menção GENUÍNA a "${entityName}" (a pessoa/marca), e classifique o tipo.
+function systemPrompt(entityName: string, aliases: string[]): string {
+  const aliasList =
+    aliases.length > 0
+      ? ` Aliases conhecidos: ${aliases.join(", ")}. Menções indiretas a esses apelidos também contam.`
+      : "";
+  return `Você analisa menções a "${entityName}" em mensagens de WhatsApp (grupos e privado). Para CADA mensagem, decida se ela é uma menção GENUÍNA a "${entityName}" (a pessoa/marca), e classifique o tipo.${aliasList}
 
-"is_mention": true apenas se a mensagem realmente fala SOBRE "${entityName}" (não apenas dirige uma mensagem a ele em conversa trivial). Saudações triviais não contam.
+"is_mention": true se a mensagem fala SOBRE "${entityName}" — inclusive indiretamente (ex.: "o cara do TEDx" quando o alias inclui isso), recomendações, críticas ou perguntas sobre a pessoa/produto. Mensagens dirigidas diretamente a ${entityName} em DM ("oi Bruno") NÃO contam, salvo se também comentam sobre ele para terceiros.
 
 "mention_type" (escolha EXATAMENTE um):
 - "elogio": elogio/admiração a ${entityName} ou seu trabalho.
@@ -95,41 +94,52 @@ function schema() {
 export async function classifyMentions(
   entityName: string,
   inputs: MentionInput[],
+  opts?: { aliases?: string[]; batchSize?: number },
 ): Promise<MentionResult[]> {
   if (inputs.length === 0) return [];
-  const payload = inputs.map((m) => ({
-    message_id: m.messageId,
-    text: m.text.slice(0, 2000),
-  }));
-  const completion = await getClient().chat.completions.create({
-    model: CLASSIFY_MODEL,
-    temperature: 0,
-    response_format: schema(),
-    messages: [
-      { role: "system", content: systemPrompt(entityName) },
-      {
-        role: "user",
-        content:
-          "Analise cada mensagem abaixo. Um resultado por mensagem, preservando message_id.\n\n" +
-          JSON.stringify(payload),
-      },
-    ],
-  });
-  const content = completion.choices[0]?.message?.content;
-  if (!content)
-    throw new Error("Empty completion from OpenAI (classifyMentions).");
-  const parsed = JSON.parse(content) as {
-    results: {
-      message_id: string;
-      is_mention: boolean;
-      mention_type: MentionType;
-      sentiment: "positivo" | "neutro" | "negativo";
-    }[];
-  };
-  return parsed.results.map((r) => ({
-    messageId: r.message_id,
-    isMention: r.is_mention,
-    mentionType: r.mention_type,
-    sentiment: r.sentiment,
-  }));
+  const aliases = opts?.aliases ?? [entityName];
+  const batchSize = opts?.batchSize ?? 12;
+  const out: MentionResult[] = [];
+
+  for (let i = 0; i < inputs.length; i += batchSize) {
+    const chunk = inputs.slice(i, i + batchSize);
+    const payload = chunk.map((m) => ({
+      message_id: m.messageId,
+      text: m.text.slice(0, 2000),
+    }));
+    const completion = await getClient().chat.completions.create({
+      model: modelForTask("mentions"),
+      temperature: 0,
+      response_format: schema(),
+      messages: [
+        { role: "system", content: systemPrompt(entityName, aliases) },
+        {
+          role: "user",
+          content:
+            "Analise cada mensagem abaixo. Um resultado por mensagem, preservando message_id.\n\n" +
+            JSON.stringify(payload),
+        },
+      ],
+    });
+    const content = completion.choices[0]?.message?.content;
+    if (!content)
+      throw new Error("Empty completion from OpenAI (classifyMentions).");
+    const parsed = JSON.parse(content) as {
+      results: {
+        message_id: string;
+        is_mention: boolean;
+        mention_type: MentionType;
+        sentiment: "positivo" | "neutro" | "negativo";
+      }[];
+    };
+    out.push(
+      ...parsed.results.map((r) => ({
+        messageId: r.message_id,
+        isMention: r.is_mention,
+        mentionType: r.mention_type,
+        sentiment: r.sentiment,
+      })),
+    );
+  }
+  return out;
 }

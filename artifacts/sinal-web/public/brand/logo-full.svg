@@ -1,0 +1,34 @@
+<svg width="320" height="80" viewBox="0 0 320 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="sinal-accent" cx="30%" cy="20%" r="120%">
+      <stop offset="0%" stop-color="#35E0D8"/>
+      <stop offset="100%" stop-color="#1c6863"/>
+    </radialGradient>
+  </defs>
+  <rect x="4" y="8" width="64" height="64" rx="18" fill="url(#sinal-accent)"/>
+  <g transform="translate(16 24) scale(2.67)">
+    <path
+      d="M3 14c2 0 2-5 4.5-5S10 18 12 18s2-13 4.5-13S19 12 21 12"
+      stroke="#06201e"
+      stroke-width="2.2"
+      stroke-linecap="round"
+    />
+  </g>
+  <text
+    x="84"
+    y="50"
+    fill="#ECECF1"
+    font-family="Clash Display, Satoshi, system-ui, sans-serif"
+    font-size="36"
+    font-weight="700"
+    letter-spacing="0.01em"
+  >Sinal</text>
+  <text
+    x="84"
+    y="68"
+    fill="#8C8C99"
+    font-family="Satoshi, system-ui, sans-serif"
+    font-size="11"
+    letter-spacing="0.08em"
+  >sinal &gt; ruído</text>
+</svg>

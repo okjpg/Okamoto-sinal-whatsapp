@@ -14,7 +14,7 @@ router.get("/groups", async (req: AuthedRequest, res) => {
   const limit = Math.min(Number(req.query.limit ?? 50), 200);
   const { rows } = await pool.query(
     `select g.chat_id,
-            g.name,
+            coalesce(nullif(gr.name, ''), nullif(g.name, ''), g.chat_id) as name,
             g.message_count,
             g.participants,
             g.last_activity_at,
@@ -29,6 +29,7 @@ router.get("/groups", async (req: AuthedRequest, res) => {
           where whatsapp_owner = $1 and chat_type = 'group' and chat_id is not null
           group by chat_id
        ) g
+       left join groups gr on gr.tenant_id = $2 and gr.chat_id = g.chat_id
        left join support_groups sg
               on sg.tenant_id = $2 and sg.chat_id = g.chat_id
       order by g.message_count desc

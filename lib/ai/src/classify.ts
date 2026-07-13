@@ -1,5 +1,5 @@
-import OpenAI from "openai";
 import { CATEGORIES, SENTIMENTS, type Category, type Sentiment } from "./taxonomy";
+import { getAiClient, modelForTask, useOpenRouterForTask } from "./openrouter";
 
 export interface ClassifyInput {
   messageId: string;
@@ -25,42 +25,14 @@ export const OPENROUTER_CLASSIFY_MODEL = "deepseek/deepseek-chat-v3-0324";
 
 type Provider = "openai" | "openrouter";
 
-/** Active provider for classifyBatch, selected via CLASSIFY_PROVIDER env. */
-export function activeProvider(): Provider {
-  return process.env.CLASSIFY_PROVIDER === "openrouter" ? "openrouter" : "openai";
-}
-
 /** Active model name (env override wins, else provider default). */
 export function activeClassifyModel(): string {
-  if (process.env.CLASSIFY_MODEL) return process.env.CLASSIFY_MODEL;
-  return activeProvider() === "openrouter"
-    ? OPENROUTER_CLASSIFY_MODEL
-    : CLASSIFY_MODEL;
+  return modelForTask("classify");
 }
 
-let openaiClient: OpenAI | null = null;
-let openrouterClient: OpenAI | null = null;
-
-function getClient(provider: Provider): OpenAI {
-  if (provider === "openrouter") {
-    if (!openrouterClient) {
-      const baseURL = process.env.AI_INTEGRATIONS_OPENROUTER_BASE_URL;
-      const apiKey = process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY;
-      if (!baseURL || !apiKey) {
-        throw new Error(
-          "AI_INTEGRATIONS_OPENROUTER_BASE_URL / _API_KEY are required for OpenRouter.",
-        );
-      }
-      openrouterClient = new OpenAI({ baseURL, apiKey });
-    }
-    return openrouterClient;
-  }
-  if (!openaiClient) {
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) throw new Error("OPENAI_API_KEY is required.");
-    openaiClient = new OpenAI({ apiKey });
-  }
-  return openaiClient;
+/** Active provider for classifyBatch, selected via CLASSIFY_PROVIDER env. */
+export function activeProvider(): Provider {
+  return useOpenRouterForTask() ? "openrouter" : "openai";
 }
 
 const SYSTEM_PROMPT = `Você é um classificador de mensagens de WhatsApp de um empreendedor/criador brasileiro (Bruno). Para CADA mensagem recebida, retorne uma classificação estruturada.
@@ -185,7 +157,7 @@ export async function classifyBatch(
     ? SYSTEM_PROMPT
     : SYSTEM_PROMPT + "\n\n" + JSON_SHAPE_INSTRUCTION;
 
-  const completion = await getClient(provider).chat.completions.create({
+  const completion = await getAiClient().chat.completions.create({
     model,
     temperature: 0,
     response_format: useStrictSchema

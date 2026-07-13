@@ -1,13 +1,8 @@
-import OpenAI from "openai";
-import { CLASSIFY_MODEL } from "./classify";
+import { getAiClient, modelForTask } from "./openrouter";
 
-let client: OpenAI | null = null;
-function getClient(): OpenAI {
-  if (!client) {
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) throw new Error("OPENAI_API_KEY is required.");
-    client = new OpenAI({ apiKey });
-  }
+let client: ReturnType<typeof getAiClient> | null = null;
+function getClient() {
+  if (!client) client = getAiClient();
   return client;
 }
 
@@ -61,7 +56,7 @@ export async function clusterTopics(
 ): Promise<TopicCluster[]> {
   if (rawPhrases.length === 0) return [];
   const completion = await getClient().chat.completions.create({
-    model: CLASSIFY_MODEL,
+    model: modelForTask("cluster"),
     temperature: 0,
     response_format: schema(),
     messages: [
