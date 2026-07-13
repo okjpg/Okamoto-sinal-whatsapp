@@ -91,7 +91,7 @@ router.get("/google/callback", async (req, res) => {
   }
 
   const creds = await getTenantGoogleCredentials(pool, row.tenant_id);
-  if (!isGoogleReady(creds)) {
+  if (!creds || !isGoogleReady(creds)) {
     res.send(callbackPage("error"));
     return;
   }

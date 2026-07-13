@@ -8,6 +8,7 @@ import {
   resolveModelsForSettings,
   type TenantAiSettings,
   type TenantOpenRouterCredentials,
+  type OpenRouterModel,
 } from "@workspace/ai";
 import { decryptSecret, encryptSecret, maskSecret } from "./secrets-crypto";
 
@@ -185,7 +186,7 @@ export async function buildTenantAiEnv(
   if (!creds) return {};
 
   const settings = await getTenantAiSettings(pool, tenantId);
-  let catalog;
+  let catalog: OpenRouterModel[];
   try {
     catalog = await fetchOpenRouterModels();
   } catch {

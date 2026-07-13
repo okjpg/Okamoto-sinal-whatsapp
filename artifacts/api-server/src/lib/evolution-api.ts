@@ -14,6 +14,27 @@ export interface EvolutionInstanceInfo {
   status: string;
 }
 
+export interface EvolutionInstanceDetails {
+  id: string | null;
+  name: string;
+  connectionStatus: string;
+  ownerJid: string | null;
+  profileName: string | null;
+  integration: string | null;
+  number: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  disconnectionAt: string | null;
+  disconnectionReasonCode: number | null;
+  disconnectionMessage: string | null;
+}
+
+export interface EvolutionServerInfo {
+  version: string | null;
+  clientName: string | null;
+  host: string;
+}
+
 const INSTANCE_RE = /^[a-zA-Z0-9_-]{3,40}$/;
 
 export function resolveInstanceName(raw?: string | null): string {
@@ -94,6 +115,61 @@ export function extractQrcodeFromBody(
 }
 
 function parseInstanceRows(body: unknown): EvolutionInstanceInfo[] {
+  return parseInstanceDetailsList(body).map((d) => ({
+    name: d.name,
+    status: d.connectionStatus,
+  }));
+}
+
+function parseDisconnectionMessage(raw: unknown): string | null {
+  if (!raw || typeof raw !== "string") return null;
+  try {
+    const o = JSON.parse(raw) as Record<string, unknown>;
+    const err = o.error as Record<string, unknown> | undefined;
+    const output = err?.output as Record<string, unknown> | undefined;
+    const payload = output?.payload as Record<string, unknown> | undefined;
+    const msg = payload?.message ?? err?.message;
+    return msg ? String(msg) : null;
+  } catch {
+    return raw.slice(0, 120);
+  }
+}
+
+function parseInstanceDetail(row: unknown): EvolutionInstanceDetails | null {
+  if (!row || typeof row !== "object") return null;
+  const r = row as Record<string, unknown>;
+  const inst = r.instance as Record<string, unknown> | undefined;
+  const name = String(
+    r.instanceName ?? r.name ?? inst?.instanceName ?? "",
+  ).trim();
+  if (!name) return null;
+  return {
+    id: r.id ? String(r.id) : null,
+    name,
+    connectionStatus: String(
+      r.connectionStatus ??
+        r.status ??
+        r.state ??
+        inst?.status ??
+        inst?.state ??
+        "unknown",
+    ),
+    ownerJid: r.ownerJid ? String(r.ownerJid) : null,
+    profileName: r.profileName ? String(r.profileName) : null,
+    integration: r.integration ? String(r.integration) : null,
+    number: r.number ? String(r.number) : null,
+    createdAt: r.createdAt ? String(r.createdAt) : null,
+    updatedAt: r.updatedAt ? String(r.updatedAt) : null,
+    disconnectionAt: r.disconnectionAt ? String(r.disconnectionAt) : null,
+    disconnectionReasonCode:
+      typeof r.disconnectionReasonCode === "number"
+        ? r.disconnectionReasonCode
+        : null,
+    disconnectionMessage: parseDisconnectionMessage(r.disconnectionObject),
+  };
+}
+
+function parseInstanceDetailsList(body: unknown): EvolutionInstanceDetails[] {
   if (!body || typeof body !== "object") return [];
   const arr = Array.isArray(body)
     ? body
@@ -103,25 +179,57 @@ function parseInstanceRows(body: unknown): EvolutionInstanceInfo[] {
         ? (body as { response: unknown[] }).response
         : [];
   return arr
-    .map((row) => {
-      if (!row || typeof row !== "object") return null;
-      const r = row as Record<string, unknown>;
-      const inst = r.instance as Record<string, unknown> | undefined;
-      const name = String(
-        r.instanceName ?? r.name ?? inst?.instanceName ?? "",
-      ).trim();
-      if (!name) return null;
-      const status = String(
-        r.connectionStatus ??
-          r.status ??
-          r.state ??
-          inst?.status ??
-          inst?.state ??
-          "unknown",
-      );
-      return { name, status };
-    })
-    .filter((x): x is EvolutionInstanceInfo => x !== null);
+    .map((row) => parseInstanceDetail(row))
+    .filter((x): x is EvolutionInstanceDetails => x !== null);
+}
+
+async function fetchEvolutionInstancesRaw(
+  cfg: EvolutionConfig,
+): Promise<unknown[]> {
+  const res = await evolutionFetch(cfg, "/instance/fetchInstances");
+  if (!res.ok) return [];
+  const body = (await res.json()) as unknown;
+  if (!body || typeof body !== "object") return [];
+  if (Array.isArray(body)) return body;
+  const wrapped = body as { instances?: unknown[]; response?: unknown[] };
+  if (Array.isArray(wrapped.instances)) return wrapped.instances;
+  if (Array.isArray(wrapped.response)) return wrapped.response;
+  return [];
+}
+
+export async function fetchEvolutionInstanceDetails(
+  cfg: EvolutionConfig,
+): Promise<EvolutionInstanceDetails | null> {
+  const rows = await fetchEvolutionInstancesRaw(cfg);
+  const row = rows.find((r) => parseInstanceDetail(r)?.name === cfg.instance);
+  return row ? parseInstanceDetail(row) : null;
+}
+
+export async function fetchEvolutionServerInfo(
+  cfg: EvolutionConfig,
+): Promise<EvolutionServerInfo> {
+  const host = (() => {
+    try {
+      return new URL(cfg.base).host;
+    } catch {
+      return cfg.base;
+    }
+  })();
+  try {
+    const res = await evolutionFetch(cfg, "/");
+    if (!res.ok) return { version: null, clientName: null, host };
+    const body = (await res.json()) as {
+      version?: string;
+      clientName?: string;
+    };
+    return {
+      version: body.version ?? null,
+      clientName: body.clientName ?? null,
+      host,
+    };
+  } catch {
+    return { version: null, clientName: null, host };
+  }
 }
 
 export async function fetchEvolutionInstances(
@@ -298,6 +406,35 @@ export async function registerEvolutionWebhook(
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`evolution_webhook_failed:${res.status}:${text.slice(0, 200)}`);
+  }
+}
+
+export interface EvolutionWebhookInfo {
+  enabled: boolean;
+  url: string | null;
+}
+
+export async function fetchEvolutionWebhook(
+  cfg: EvolutionConfig,
+): Promise<EvolutionWebhookInfo | null> {
+  try {
+    const res = await evolutionFetch(cfg, `/webhook/find/${cfg.instance}`);
+    if (!res.ok) return null;
+    const body = (await res.json()) as Record<string, unknown>;
+    const nested =
+      body.webhook && typeof body.webhook === "object"
+        ? (body.webhook as Record<string, unknown>)
+        : body;
+    const enabled = Boolean(nested.enabled ?? nested.webhookEnabled ?? false);
+    const url =
+      typeof nested.url === "string"
+        ? nested.url
+        : typeof nested.webhookUrl === "string"
+          ? nested.webhookUrl
+          : null;
+    return { enabled, url };
+  } catch {
+    return null;
   }
 }
 

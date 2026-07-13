@@ -24,6 +24,13 @@
     "build-topics": "tsx ./src/build-topics.ts",
     "build-mentions": "tsx ./src/build-mentions.ts",
     "refresh-all": "tsx ./src/refresh-all.ts",
+    "daily-digest": "tsx ./src/daily-digest.ts",
+    "telegram-setup": "tsx ./src/telegram-setup.ts",
+    "telegram-poll": "tsx ./src/telegram-poll.ts",
+    "telegram-whatsapp": "tsx ./src/telegram-whatsapp.ts",
+    "diagnose-whatsapp": "tsx ./src/diagnose-whatsapp.ts",
+    "fix-webhook": "tsx ./src/fix-webhook.ts",
+    "export-brand": "tsx ./src/export-brand-png.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
@@ -34,7 +41,9 @@
     "pg": "^8.20.0"
   },
   "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "@types/node": "catalog:",
+    "sharp": "^0.34.3",
     "tsx": "catalog:"
   }
 }

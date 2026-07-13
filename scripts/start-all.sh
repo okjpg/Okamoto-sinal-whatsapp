@@ -195,11 +195,30 @@ ok "Site online"
 step 5 "Conectando webhook na Evolution API"
 register_evolution_webhook
 
-step 6 "Pronto — jornada completa"
+step 6 "Telegram (menu local + alertas WA)"
+if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -n "${TELEGRAM_CHAT_ID:-}" ]; then
+  if ! grep -q '^TELEGRAM_WA_OFFLINE_ALERTS=' "$ROOT/.env" 2>/dev/null; then
+    echo "TELEGRAM_WA_OFFLINE_ALERTS=1" >> "$ROOT/.env"
+    ok "TELEGRAM_WA_OFFLINE_ALERTS=1 adicionado ao .env"
+  fi
+  PORT=$API_PORT SINAL_PROJECT_ROOT="$ROOT" pnpm --filter @workspace/scripts run telegram-poll >/tmp/sinal-telegram-poll.log 2>&1 &
+  TELEGRAM_PID=$!
+  sleep 1
+  if kill -0 "$TELEGRAM_PID" 2>/dev/null; then
+    ok "telegram-poll rodando (menu + comandos no Telegram)"
+    info "Log: /tmp/sinal-telegram-poll.log"
+  else
+    warn "telegram-poll não iniciou — veja /tmp/sinal-telegram-poll.log"
+  fi
+else
+  warn "Telegram não configurado — defina TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID no .env"
+fi
+
 echo ""
 echo "  ┌─────────────────────────────────────────────────────────┐"
-echo "  │  ONDE ABRIR                                             │"
+echo "  │  PRONTO — jornada completa                              │"
 echo "  ├─────────────────────────────────────────────────────────┤"
+echo "  │  ONDE ABRIR                                             │"
 echo "  │  Dashboard Sinal:  http://localhost:${WEB_PORT}              │"
 echo "  │  Login:             ADMIN_EMAIL / ADMIN_PASSWORD (.env) │"
 echo "  │  Painel ngrok:       http://127.0.0.1:4040              │"
@@ -216,7 +235,7 @@ echo "  │     pnpm --filter @workspace/scripts run refresh-all    │"
 echo "  │  4. Recarregue o dashboard                              │"
 echo "  └─────────────────────────────────────────────────────────┘"
 echo ""
-warn "Mantenha ESTA janela aberta. Ctrl+C encerra tudo (site + API + ngrok)."
+warn "Mantenha ESTA janela aberta. Ctrl+C encerra tudo (site + API + ngrok + telegram-poll)."
 echo ""
 
 wait "$API_PID" "$WEB_PID"

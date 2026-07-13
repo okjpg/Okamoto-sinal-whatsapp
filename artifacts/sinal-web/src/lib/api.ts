@@ -1894,6 +1894,35 @@ export function useExportContactToGoogle() {
 
 /* ----------------------------- WhatsApp (Evolution API) ----------------------------- */
 
+export interface EvolutionMessageMirror {
+  firstMessageAt: string | null;
+  lastMessageAt: string | null;
+  totalMessages: number;
+  privateChats: number;
+  groupChats: number;
+}
+
+export interface EvolutionInstanceDetails {
+  id: string | null;
+  name: string;
+  connectionStatus: string;
+  ownerJid: string | null;
+  profileName: string | null;
+  integration: string | null;
+  number: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  disconnectionAt: string | null;
+  disconnectionReasonCode: number | null;
+  disconnectionMessage: string | null;
+}
+
+export interface EvolutionServerInfo {
+  version: string | null;
+  clientName: string | null;
+  host: string;
+}
+
 export interface EvolutionStatus {
   configured: boolean;
   connected: boolean;
@@ -1901,8 +1930,20 @@ export interface EvolutionStatus {
   instance: string | null;
   webhookUrl: string | null;
   webhookConfigured: boolean;
+  webhookRegistered: boolean;
+  webhookRegisteredUrl: string | null;
   instanceExists: boolean;
   suggestedInstanceName: string;
+  ownerPhone: string;
+  server: EvolutionServerInfo | null;
+  instanceDetails: EvolutionInstanceDetails | null;
+  mirror: EvolutionMessageMirror;
+  phoneMatchesOwner: boolean | null;
+  lastWebhookAt: string | null;
+  minutesSinceLastWebhook: number | null;
+  minutesSinceLastMessage: number | null;
+  webhookStale: boolean;
+  webhookStaleReason: string | null;
 }
 
 export interface EvolutionInstancePayload {
@@ -2002,6 +2043,21 @@ export function useEvolutionDisconnect() {
         method: "POST",
         body: JSON.stringify(payload),
       }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.evolutionStatus }),
+  });
+}
+
+export function useRegisterEvolutionWebhook() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: EvolutionInstancePayload = {}) =>
+      apiFetch<{ ok: true; webhookUrl: string; webhookRegistered: boolean }>(
+        "/evolution/webhook/register",
+        {
+          method: "POST",
+          body: JSON.stringify(payload),
+        },
+      ),
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.evolutionStatus }),
   });
 }

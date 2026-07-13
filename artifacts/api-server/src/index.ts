@@ -1,6 +1,9 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { startAutoRefreshScheduler } from "./lib/scheduler";
+import { startDailyDigestScheduler } from "./lib/digest-scheduler";
+import { startWhatsAppMonitor } from "./lib/whatsapp-monitor";
+import { ensureTelegramCommands } from "./lib/telegram-bot";
 import { pool, syncMonitoredEntityFromEnv } from "@workspace/db";
 
 const rawPort = process.env["PORT"];
@@ -31,4 +34,7 @@ app.listen(port, (err) => {
     .catch((err) => logger.warn({ err }, "Monitored entity sync failed"));
   // Kick off the 6-hourly automatic data refresh (incremental pipeline).
   startAutoRefreshScheduler();
+  startDailyDigestScheduler();
+  startWhatsAppMonitor();
+  void ensureTelegramCommands();
 });

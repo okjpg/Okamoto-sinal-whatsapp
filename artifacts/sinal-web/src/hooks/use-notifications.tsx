@@ -56,7 +56,7 @@ function showBrowserNotification(title: string, body: string, href?: string) {
   const n = new Notification(title, {
     body,
     tag: `sinal-${title}`,
-    icon: "/favicon.ico",
+    icon: "/favicon-48.png",
   });
   n.onclick = () => {
     window.focus();

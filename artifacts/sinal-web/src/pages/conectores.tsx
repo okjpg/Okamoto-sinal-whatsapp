@@ -13,9 +13,11 @@ import {
   useCreateEvolutionInstance,
   useEvolutionConnect,
   useEvolutionDisconnect,
+  useRegisterEvolutionWebhook,
   fetchEvolutionQrcode,
   getStoredEvolutionInstance,
   setStoredEvolutionInstance,
+  type EvolutionStatus,
   qk,
 } from "@/lib/api";
 import {
@@ -27,6 +29,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   Sheet,
+  SheetClose,
   SheetContent,
   SheetDescription,
   SheetHeader,
@@ -41,6 +44,17 @@ import {
   Code2,
   Bot,
   ExternalLink,
+  ChevronRight,
+  Copy,
+  RefreshCw,
+  AlertTriangle,
+  Smartphone,
+  Server,
+  Link2,
+  Database,
+  CheckCircle2,
+  XCircle,
+  Clock,
 } from "lucide-react";
 
 function ConnectorCard({
@@ -48,21 +62,47 @@ function ConnectorCard({
   name,
   description,
   children,
+  onDetails,
 }: {
   icon: ReactNode;
   name: string;
   description: string;
   children: ReactNode;
+  onDetails?: () => void;
 }) {
-  return (
-    <div className="flex items-center gap-[14px] p-[18px] border border-[var(--border-soft)] rounded-[var(--radius)] bg-[var(--surface)]">
+  const info = (
+    <>
       <div className="w-[44px] h-[44px] rounded-[11px] flex items-center justify-center bg-[var(--surface-3)] text-[#ECECF1] shrink-0">
         {icon}
       </div>
       <div className="min-w-0 flex-1">
         <div className="font-semibold text-[14px]">{name}</div>
-        <div className="text-[12px] text-[var(--muted)] mt-[2px]">{description}</div>
+        <div className="text-[12px] text-[var(--muted)] mt-[2px] line-clamp-2">
+          {description}
+        </div>
+        {onDetails && (
+          <div className="text-[11px] text-[var(--accent)] mt-[6px] font-medium">
+            Ver detalhes da conexão
+          </div>
+        )}
       </div>
+    </>
+  );
+
+  return (
+    <div className="flex items-center gap-[14px] p-[18px] border border-[var(--border-soft)] rounded-[var(--radius)] bg-[var(--surface)]">
+      {onDetails ? (
+        <button
+          type="button"
+          onClick={onDetails}
+          className="flex items-center gap-[14px] min-w-0 flex-1 text-left rounded-[10px] -m-1 p-1 hover:bg-[var(--surface-2)] transition-colors cursor-pointer group"
+        >
+          {info}
+          <ChevronRight className="w-4 h-4 text-[var(--muted-2)] shrink-0 group-hover:text-[var(--accent)] transition-colors" />
+        </button>
+      ) : (
+        <div className="flex items-center gap-[14px] min-w-0 flex-1">{info}</div>
+      )}
       <div className="ml-auto flex flex-wrap items-center justify-end gap-[7px] text-[12.5px] font-medium shrink-0">
         {children}
       </div>
@@ -658,6 +698,488 @@ function GoogleIntegrations() {
   );
 }
 
+function formatBrPhone(raw: string | null | undefined): string {
+  if (raw == null || raw === "") return "—";
+  const s = String(raw);
+  const d = s.replace(/\D/g, "");
+  if (d.length === 13 && d.startsWith("55")) {
+    return `+${d.slice(0, 2)} ${d.slice(2, 4)} ${d.slice(4, 9)}-${d.slice(9)}`;
+  }
+  if (d.length === 12 && d.startsWith("55")) {
+    return `+${d.slice(0, 2)} ${d.slice(2, 4)} ${d.slice(4, 8)}-${d.slice(8)}`;
+  }
+  return s;
+}
+
+function connectionLabel(state: string, connected: boolean): string {
+  if (connected) return "Conectado";
+  if (state === "connecting") return "Aguardando QR";
+  if (state === "close" || state === "closed") return "Desconectado";
+  if (state === "error") return "Erro na API";
+  if (state === "unconfigured") return "Não configurado";
+  return state;
+}
+
+function formatShortBr(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleDateString("pt-BR", {
+      day: "2-digit",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
+}
+
+function formatMinutesAgo(mins: number | null | undefined): string {
+  if (mins == null) return "—";
+  if (mins < 1) return "agora";
+  if (mins < 60) return `há ${mins} min`;
+  const h = Math.floor(mins / 60);
+  if (h < 48) return `há ${h}h`;
+  const d = Math.floor(h / 24);
+  return `há ${d}d`;
+}
+
+function CopyIconButton({ text, className }: { text: string; className?: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        void navigator.clipboard.writeText(text).then(() => {
+          setCopied(true);
+          window.setTimeout(() => setCopied(false), 1500);
+        });
+      }}
+      className={`inline-flex items-center justify-center w-6 h-6 rounded-[6px] text-[var(--muted-2)] hover:text-[var(--text)] hover:bg-[var(--surface-3)] transition-colors shrink-0 ${className ?? ""}`}
+      title={copied ? "Copiado" : "Copiar"}
+    >
+      {copied ? (
+        <CheckCircle2 className="w-3 h-3 text-[var(--ok)]" />
+      ) : (
+        <Copy className="w-3 h-3" />
+      )}
+    </button>
+  );
+}
+
+function WaMetric({
+  label,
+  value,
+  sub,
+}: {
+  label: string;
+  value: string | number;
+  sub?: string;
+}) {
+  return (
+    <div className="rounded-[11px] border border-[var(--border-soft)] bg-[var(--surface-2)] px-4 py-3 min-w-0 w-full">
+      <div className="font-display text-[22px] sm:text-[20px] font-semibold leading-none tracking-tight tabular-nums">
+        {value}
+      </div>
+      <div className="text-[10.5px] uppercase tracking-[0.08em] text-[var(--muted-2)] mt-2 font-medium">
+        {label}
+      </div>
+      {sub ? (
+        <div className="text-[10px] text-[var(--muted)] mt-1 leading-snug break-words">{sub}</div>
+      ) : null}
+    </div>
+  );
+}
+
+function WaCard({
+  icon: Icon,
+  title,
+  children,
+  className,
+}: {
+  icon: typeof Server;
+  title: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={`rounded-[12px] border border-[var(--border-soft)] bg-[var(--surface-2)]/60 p-4 sm:p-4 min-w-0 w-full ${className ?? ""}`}
+    >
+      <div className="flex items-center gap-2.5 mb-3">
+        <div className="w-7 h-7 rounded-[8px] bg-[var(--surface-3)] flex items-center justify-center shrink-0">
+          <Icon className="w-3.5 h-3.5 text-[var(--accent)]" />
+        </div>
+        <span className="text-[11px] font-semibold uppercase tracking-[0.07em] text-[var(--muted-2)]">
+          {title}
+        </span>
+      </div>
+      <div className="min-w-0">{children}</div>
+    </div>
+  );
+}
+
+function WaLine({
+  label,
+  value,
+  mono,
+  warn,
+  copy,
+}: {
+  label: string;
+  value: ReactNode;
+  mono?: boolean;
+  warn?: boolean;
+  copy?: string;
+}) {
+  return (
+    <div className="grid grid-cols-1 gap-1 py-2 border-b border-[var(--border-soft)]/60 last:border-0 sm:grid-cols-[minmax(5.5rem,38%)_1fr] sm:items-center sm:gap-3">
+      <span className="text-[11.5px] text-[var(--muted)]">{label}</span>
+      <div className="flex items-center gap-1.5 min-w-0 sm:justify-end">
+        <span
+          className={`text-[12.5px] sm:text-[12px] min-w-0 ${
+            mono ? "font-mono text-[11px] break-all" : "break-words"
+          } ${warn ? "text-[var(--warn,#f5a623)]" : "text-[var(--text)]"} sm:text-right`}
+        >
+          {value}
+        </span>
+        {copy ? <CopyIconButton text={copy} /> : null}
+      </div>
+    </div>
+  );
+}
+
+function StatusPill({ ok, label }: { ok: boolean; label: string }) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium ${
+        ok
+          ? "bg-[rgba(52,211,153,0.12)] text-[var(--ok)]"
+          : "bg-[rgba(248,113,113,0.1)] text-[#F87171]"
+      }`}
+    >
+      {ok ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+      {label}
+    </span>
+  );
+}
+
+function WhatsAppDetailsSheet({
+  open,
+  onOpenChange,
+  status,
+  isLoading,
+  onRefresh,
+  refreshing,
+  onDisconnect,
+  disconnecting,
+  onRegisterWebhook,
+  registeringWebhook,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  status: EvolutionStatus | undefined;
+  isLoading: boolean;
+  onRefresh: () => void;
+  refreshing: boolean;
+  onDisconnect: () => void;
+  disconnecting: boolean;
+  onRegisterWebhook: () => void;
+  registeringWebhook: boolean;
+}) {
+  const d = status?.instanceDetails;
+  const jidPhoneRaw =
+    d?.ownerJid?.replace(/@.*$/, "") ?? (d?.number != null ? String(d.number) : null);
+  const jidPhone = jidPhoneRaw && jidPhoneRaw.length > 0 ? jidPhoneRaw : null;
+  const displayPhone = jidPhone ? formatBrPhone(jidPhone) : formatBrPhone(status?.ownerPhone);
+  const mirror = status?.mirror;
+  const connected = status?.connected ?? false;
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent
+        side="right"
+        className="!fixed !inset-y-3 !right-3 !left-auto !h-[calc(100dvh-24px)] !max-h-[calc(100dvh-24px)] !w-[min(calc(100vw-24px),420px)] sm:!w-[420px] !max-w-[calc(100vw-24px)] rounded-[14px] border border-[var(--border)] shadow-2xl bg-[var(--surface)] p-0 flex flex-col overflow-hidden gap-0 [&>button.absolute]:hidden"
+      >
+        <SheetHeader className="shrink-0 px-7 pt-7 pb-5 border-b border-[var(--border-soft)] space-y-0 text-left">
+          <div className="flex items-start gap-5 min-w-0">
+            <div className="min-w-0 flex-1">
+              <SheetTitle className="font-display font-semibold text-[17px] flex items-center gap-2 pr-2">
+                <MessageCircle className="w-[18px] h-[18px] text-[var(--accent)] shrink-0" />
+                <span className="truncate">WhatsApp</span>
+              </SheetTitle>
+              <SheetDescription className="text-[12px] text-[var(--muted)] mt-1.5 leading-snug pr-2">
+                Evolution · sessão e espelho no Sinal
+              </SheetDescription>
+            </div>
+            <div className="flex items-center gap-2 shrink-0 pt-0.5">
+              <button
+                type="button"
+                onClick={onRefresh}
+                disabled={refreshing}
+                className="inline-flex items-center justify-center w-9 h-9 rounded-[9px] border border-[var(--border-soft)] text-[var(--muted)] hover:text-[var(--text)] hover:bg-[var(--surface-2)] disabled:opacity-50"
+                title="Atualizar"
+              >
+                <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} />
+              </button>
+              <SheetClose asChild>
+                <button
+                  type="button"
+                  className="inline-flex items-center justify-center w-9 h-9 rounded-[9px] border border-[var(--border-soft)] text-[var(--muted)] hover:text-[var(--text)] hover:bg-[var(--surface-2)]"
+                  title="Fechar"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </SheetClose>
+            </div>
+          </div>
+        </SheetHeader>
+
+        <div className="flex-1 overflow-y-auto overscroll-contain px-7 py-6 pb-[max(2rem,env(safe-area-inset-bottom))] [scrollbar-gutter:stable]">
+          {isLoading && !status ? (
+            <div className="flex justify-center py-16">
+              <Loader2 className="w-7 h-7 animate-spin text-[var(--muted)]" />
+            </div>
+          ) : !status?.configured ? (
+            <p className="text-[13px] text-[var(--muted)] py-2 leading-relaxed">
+              Configure{" "}
+              <code className="font-mono text-[11px] bg-[var(--surface-2)] px-1.5 py-0.5 rounded">
+                EVOLUTION_API_URL
+              </code>{" "}
+              e{" "}
+              <code className="font-mono text-[11px] bg-[var(--surface-2)] px-1.5 py-0.5 rounded">
+                EVOLUTION_API_KEY
+              </code>{" "}
+              no servidor.
+            </p>
+          ) : (
+            <div className="flex flex-col gap-4 w-full min-w-0 max-w-full">
+              <div
+                className={`relative rounded-[14px] border p-4 sm:p-5 overflow-hidden w-full ${
+                  connected
+                    ? "border-[rgba(52,211,153,0.25)] bg-gradient-to-br from-[rgba(52,211,153,0.08)] to-transparent"
+                    : "border-[var(--border-soft)] bg-[var(--surface-2)]/50"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0 flex-1">
+                    <StatusPill
+                      ok={connected}
+                      label={connectionLabel(status.state, connected)}
+                    />
+                    {d?.profileName ? (
+                      <div className="font-display font-semibold text-[17px] sm:text-[16px] mt-3 truncate">
+                        {d.profileName}
+                      </div>
+                    ) : null}
+                    <div className="text-[15px] sm:text-[14px] font-medium text-[var(--text)] mt-1.5 tabular-nums break-words">
+                      {displayPhone}
+                    </div>
+                    {status.instance ? (
+                      <div className="flex items-center gap-1.5 mt-2 min-w-0">
+                        <span className="font-mono text-[11px] text-[var(--muted)] break-all leading-snug">
+                          {status.instance}
+                        </span>
+                        <CopyIconButton text={status.instance} />
+                      </div>
+                    ) : null}
+                  </div>
+                  <div
+                    className={`w-11 h-11 rounded-[12px] flex items-center justify-center shrink-0 ${
+                      connected ? "bg-[rgba(52,211,153,0.15)]" : "bg-[var(--surface-3)]"
+                    }`}
+                  >
+                    <Smartphone
+                      className={`w-5 h-5 ${connected ? "text-[var(--ok)]" : "text-[var(--muted-2)]"}`}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {status.phoneMatchesOwner === false && (
+                <div className="flex gap-3 p-4 rounded-[12px] border border-[rgba(245,166,35,0.3)] bg-[rgba(245,166,35,0.06)]">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-[var(--warn,#f5a623)] mt-0.5" />
+                  <p className="text-[12px] text-[var(--warn,#f5a623)] leading-relaxed min-w-0">
+                    Número da instância difere do{" "}
+                    <code className="font-mono text-[10.5px]">WHATSAPP_OWNER</code>. Mensagens
+                    podem não aparecer no dashboard.
+                  </p>
+                </div>
+              )}
+
+              {status.webhookStale && (
+                <div className="flex gap-3 p-4 rounded-[12px] border border-[rgba(248,113,113,0.35)] bg-[rgba(248,113,113,0.06)]">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-[#F87171] mt-0.5" />
+                  <div className="min-w-0">
+                    <p className="text-[12px] font-medium text-[#F87171]">Webhook parado</p>
+                    <p className="text-[11.5px] text-[#F87171]/90 mt-1 leading-relaxed">
+                      {status.webhookStaleReason ??
+                        "Mensagens podem não estar chegando ao Sinal."}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={onRegisterWebhook}
+                      disabled={registeringWebhook || !status.webhookConfigured}
+                      className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] border border-[rgba(248,113,113,0.4)] text-[11.5px] font-medium text-[#F87171] hover:bg-[rgba(248,113,113,0.1)] disabled:opacity-50"
+                    >
+                      {registeringWebhook ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <RefreshCw className="w-3.5 h-3.5" />
+                      )}
+                      Re-registrar webhook
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3 sm:gap-3">
+                <WaMetric
+                  label="Mensagens"
+                  value={(mirror?.totalMessages ?? 0).toLocaleString("pt-BR")}
+                  sub={mirror?.lastMessageAt ? `últ. ${formatShortBr(mirror.lastMessageAt)}` : undefined}
+                />
+                <WaMetric label="DMs" value={mirror?.privateChats ?? 0} />
+                <WaMetric label="Grupos" value={mirror?.groupChats ?? 0} />
+              </div>
+
+              <div className="flex flex-col gap-3 w-full min-w-0">
+                <WaCard icon={Server} title="Evolution">
+                  <WaLine label="Servidor" value={status.server?.host ?? "—"} />
+                  {status.server?.version ? (
+                    <WaLine
+                      label="Versão"
+                      value={`${status.server.version}${status.server.clientName ? ` · ${status.server.clientName}` : ""}`}
+                    />
+                  ) : null}
+                  <WaLine
+                    label="Instância"
+                    value={status.instanceExists ? "Ativa no servidor" : "Não encontrada"}
+                    warn={!status.instanceExists}
+                  />
+                  {d?.integration ? <WaLine label="Integração" value={d.integration} /> : null}
+                  {d?.id ? <WaLine label="ID" value={d.id} mono copy={d.id} /> : null}
+                </WaCard>
+
+                <div className="grid grid-cols-1 gap-3">
+                  <WaCard icon={Link2} title="Webhook · saúde">
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      <StatusPill
+                        ok={status.webhookConfigured}
+                        label={status.webhookConfigured ? ".env OK" : "Sem URL"}
+                      />
+                      <StatusPill
+                        ok={status.webhookRegistered}
+                        label={status.webhookRegistered ? "Evolution OK" : "Não registrado"}
+                      />
+                    </div>
+                    <WaLine
+                      label="Última msg"
+                      value={formatMinutesAgo(status.minutesSinceLastMessage)}
+                      warn={status.webhookStale}
+                    />
+                    <WaLine
+                      label="Último hit"
+                      value={
+                        status.lastWebhookAt
+                          ? formatMinutesAgo(status.minutesSinceLastWebhook)
+                          : "nenhum nesta sessão"
+                      }
+                      warn={!status.lastWebhookAt && connected}
+                    />
+                    {status.webhookUrl ? (
+                      <div className="flex items-start gap-1.5 mt-2 min-w-0">
+                        <p
+                          className="font-mono text-[10px] text-[var(--muted)] leading-relaxed break-all flex-1 min-w-0"
+                          title={status.webhookUrl}
+                        >
+                          {status.webhookUrl}
+                        </p>
+                        <CopyIconButton text={status.webhookUrl} className="mt-0.5" />
+                      </div>
+                    ) : null}
+                    {status.webhookRegisteredUrl &&
+                    status.webhookUrl &&
+                    status.webhookRegisteredUrl !== status.webhookUrl ? (
+                      <p className="text-[10.5px] text-[var(--warn,#f5a623)] mt-2 leading-snug">
+                        Evolution usa URL diferente da configurada no .env
+                      </p>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={onRegisterWebhook}
+                      disabled={registeringWebhook || !status.webhookConfigured}
+                      className="mt-3 w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-[9px] border border-[var(--border-soft)] text-[11.5px] font-medium text-[var(--muted)] hover:text-[var(--text)] hover:bg-[var(--surface-3)] disabled:opacity-50"
+                    >
+                      {registeringWebhook ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <RefreshCw className="w-3.5 h-3.5" />
+                      )}
+                      Re-registrar webhook na Evolution
+                    </button>
+                  </WaCard>
+
+                  <WaCard icon={Database} title="Conta Sinal">
+                    <WaLine
+                      label="Owner"
+                      value={formatBrPhone(status.ownerPhone)}
+                      copy={status.ownerPhone || undefined}
+                    />
+                    {status.suggestedInstanceName !== status.instance ? (
+                      <WaLine
+                        label="Sugerida"
+                        value={status.suggestedInstanceName}
+                        mono
+                        copy={status.suggestedInstanceName}
+                      />
+                    ) : null}
+                  </WaCard>
+                </div>
+
+                <WaCard icon={Clock} title="Sessão">
+                  {d?.ownerJid ? (
+                    <WaLine label="JID" value={d.ownerJid.split("@")[0] + "@…"} mono copy={d.ownerJid} />
+                  ) : null}
+                  <WaLine label="Criada" value={formatShortBr(d?.createdAt)} />
+                  <WaLine label="Atualizada" value={formatShortBr(d?.updatedAt)} />
+                  {mirror?.firstMessageAt ? (
+                    <WaLine label="1ª msg no Sinal" value={formatShortBr(mirror.firstMessageAt)} />
+                  ) : null}
+                  {d?.disconnectionAt ? (
+                    <WaLine
+                      label="Desconectada"
+                      value={formatShortBr(d.disconnectionAt)}
+                      warn
+                    />
+                  ) : null}
+                  {d?.disconnectionMessage ? (
+                    <p className="text-[11.5px] text-[var(--warn,#f5a623)] mt-2 leading-relaxed break-words">
+                      {d.disconnectionMessage}
+                    </p>
+                  ) : null}
+                </WaCard>
+              </div>
+
+              {connected && (
+                <button
+                  type="button"
+                  onClick={onDisconnect}
+                  disabled={disconnecting}
+                  className="w-full mt-2 px-4 py-2.5 rounded-[11px] text-[12.5px] font-medium text-[var(--muted)] hover:text-[#F87171] hover:bg-[rgba(248,113,113,0.06)] border border-[var(--border-soft)] hover:border-[rgba(248,113,113,0.25)] disabled:opacity-50 transition-colors"
+                >
+                  {disconnecting ? "Desconectando…" : "Desconectar sessão"}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
 function WhatsAppCard() {
   const qc = useQueryClient();
   const [instanceName, setInstanceName] = useState(
@@ -669,13 +1191,15 @@ function WhatsAppCard() {
   const [qrBase64, setQrBase64] = useState<string | null>(null);
   const [pairingCode, setPairingCode] = useState<string | null>(null);
   const [banner, setBanner] = useState<string | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
-  const { data: status, isLoading, isError, refetch } = useEvolutionStatus(instanceName || undefined, {
-    poll: qrOpen,
+  const { data: status, isLoading, isError, refetch, isFetching } = useEvolutionStatus(instanceName || undefined, {
+    poll: qrOpen || detailsOpen,
   });
   const createInstance = useCreateEvolutionInstance();
   const connect = useEvolutionConnect();
   const disconnect = useEvolutionDisconnect();
+  const registerWebhook = useRegisterEvolutionWebhook();
 
   useEffect(() => {
     if (status?.suggestedInstanceName && !instanceName) {
@@ -811,6 +1335,7 @@ function WhatsAppCard() {
   }
 
   const activeInstance = instanceName.trim() || status?.instance || "—";
+  const profileName = status?.instanceDetails?.profileName;
 
   const description = isError
     ? "Erro ao consultar Evolution — reinicie a API e tente de novo"
@@ -819,7 +1344,9 @@ function WhatsAppCard() {
     : isLoading
       ? "Verificando conexão..."
       : status.connected
-        ? `Conectado · instância ${activeInstance}`
+        ? profileName
+          ? `Conectado como ${profileName} · ${activeInstance}`
+          : `Conectado · instância ${activeInstance}`
         : status.state === "connecting"
           ? `Instância ${activeInstance} · escaneie o QR no celular`
           : status.instanceExists
@@ -850,6 +1377,7 @@ function WhatsAppCard() {
         icon={<MessageCircle className="w-5 h-5" />}
         name="WhatsApp"
         description={description}
+        onDetails={status?.configured || isLoading ? () => setDetailsOpen(true) : undefined}
       >
         {!status?.configured ? (
           <span className="text-[var(--muted-2)] text-[12px]">Não configurado</span>
@@ -899,6 +1427,25 @@ function WhatsAppCard() {
           </>
         )}
       </ConnectorCard>
+
+      <WhatsAppDetailsSheet
+        open={detailsOpen}
+        onOpenChange={setDetailsOpen}
+        status={status}
+        isLoading={isLoading}
+        onRefresh={() => void refetch()}
+        refreshing={isFetching}
+        onDisconnect={() => disconnect.mutate(payload())}
+        disconnecting={disconnect.isPending}
+        onRegisterWebhook={() =>
+          registerWebhook.mutate(payload(), {
+            onSuccess: () => setBanner("Webhook re-registrado na Evolution."),
+            onError: () =>
+              setBanner("Falha ao registrar webhook. Verifique ngrok e EVOLUTION_WEBHOOK_URL."),
+          })
+        }
+        registeringWebhook={registerWebhook.isPending}
+      />
 
       <Dialog open={setupOpen} onOpenChange={setSetupOpen}>
         <DialogContent className="sm:max-w-[440px] bg-[var(--surface)] border-[var(--border)] text-[var(--text)]">

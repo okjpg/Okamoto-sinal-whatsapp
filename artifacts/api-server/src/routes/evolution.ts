@@ -15,8 +15,6 @@ import {
   fetchEvolutionInstances,
   fetchEvolutionQrcode,
   getEvolutionConfig,
-  getSuggestedInstanceName,
-  instanceExistsOnServer,
   isEvolutionConnected,
   logoutEvolutionInstance,
   prepareInstanceForQr,
@@ -24,6 +22,8 @@ import {
   resolveInstanceName,
   restartEvolutionInstance,
 } from "../lib/evolution-api";
+import { getWhatsAppConnectionStatus } from "../lib/whatsapp-connection";
+import { recordWebhookHit } from "../lib/webhook-health";
 
 const router: IRouter = Router();
 
@@ -115,6 +115,7 @@ router.post("/evolution/webhook", async (req, res) => {
   }
 
   res.json({ ok: true, received: payloads.length, inserted });
+  recordWebhookHit();
   if (inserted > 0) scheduleWebhookRefresh();
 });
 
@@ -122,36 +123,8 @@ router.use(requireAuth);
 
 router.get("/evolution/status", async (req: AuthedRequest, res) => {
   const cfg = cfgFromRequest(req);
-  const hookUrl = evolutionWebhookUrl();
-  const suggestedInstanceName = OWNER ? getSuggestedInstanceName(OWNER) : "sinal";
-
-  if (!cfg) {
-    res.json({
-      configured: false,
-      connected: false,
-      state: "unconfigured",
-      instance: null,
-      webhookUrl: null,
-      webhookConfigured: false,
-      instanceExists: false,
-      suggestedInstanceName,
-    });
-    return;
-  }
-
-  const state = await fetchConnectionState(cfg);
-  const instanceExists = await instanceExistsOnServer(cfg);
-
-  res.json({
-    configured: true,
-    connected: isEvolutionConnected(state),
-    state,
-    instance: cfg.instance,
-    webhookUrl: hookUrl,
-    webhookConfigured: Boolean(hookUrl),
-    instanceExists,
-    suggestedInstanceName,
-  });
+  const status = await getWhatsAppConnectionStatus(cfg);
+  res.json(status);
 });
 
 router.get("/evolution/instances", async (req: AuthedRequest, res) => {
@@ -326,6 +299,34 @@ router.post("/evolution/disconnect", async (req: AuthedRequest, res) => {
   } catch (e) {
     req.log?.error({ err: e }, "evolution disconnect failed");
     res.status(502).json({ error: "evolution_disconnect_failed" });
+  }
+});
+
+router.post("/evolution/webhook/register", async (req: AuthedRequest, res) => {
+  const cfg = cfgFromRequest(req);
+  if (!cfg) {
+    res.status(400).json({ error: "invalid_instance_name" });
+    return;
+  }
+  const hookUrl = evolutionWebhookUrl();
+  if (!hookUrl) {
+    res.status(400).json({
+      error: "webhook_not_configured",
+      message: "Configure EVOLUTION_WEBHOOK_URL ou SINAL_PUBLIC_URL no .env",
+    });
+    return;
+  }
+  try {
+    await registerEvolutionWebhook(cfg, hookUrl);
+    const status = await getWhatsAppConnectionStatus(cfg);
+    res.json({
+      ok: true,
+      webhookUrl: hookUrl,
+      webhookRegistered: status.webhookRegistered,
+    });
+  } catch (e) {
+    req.log?.error({ err: e }, "evolution webhook register failed");
+    res.status(502).json({ error: "evolution_webhook_register_failed" });
   }
 });
 

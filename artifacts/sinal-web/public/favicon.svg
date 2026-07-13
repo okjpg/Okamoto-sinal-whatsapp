@@ -1,3 +1,17 @@
 <svg width="180" height="180" viewBox="0 0 180 180" fill="none" xmlns="http://www.w3.org/2000/svg">
-<rect width="180" height="180" rx="36" fill="#FF3C00"/>
+  <defs>
+    <radialGradient id="sinal-accent" cx="30%" cy="20%" r="120%">
+      <stop offset="0%" stop-color="#35E0D8"/>
+      <stop offset="100%" stop-color="#1c6863"/>
+    </radialGradient>
+  </defs>
+  <rect width="180" height="180" rx="50" fill="url(#sinal-accent)"/>
+  <g transform="translate(27 27) scale(5.25)">
+    <path
+      d="M3 14c2 0 2-5 4.5-5S10 18 12 18s2-13 4.5-13S19 12 21 12"
+      stroke="#06201e"
+      stroke-width="2.2"
+      stroke-linecap="round"
+    />
+  </g>
 </svg>

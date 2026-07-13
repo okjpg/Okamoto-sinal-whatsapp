@@ -6,6 +6,7 @@ import CommandPalette from "@/components/CommandPalette";
 import RefreshControl from "@/components/RefreshControl";
 import NotificationBell from "@/components/NotificationBell";
 import { NotificationProvider } from "@/hooks/use-notifications";
+import { SinalLogo } from "@/components/SinalLogo";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -70,9 +71,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       {/* Sidebar */}
       <aside className="bg-[var(--surface)] border-r border-[var(--border-soft)] flex flex-col p-[18px_14px] gap-[4px] h-screen">
         <div className="flex items-center gap-[10px] p-[6px_8px_18px]">
-          <div className="w-[32px] h-[32px] rounded-[9px] bg-[radial-gradient(120%_120%_at_30%_20%,var(--accent),var(--accent-dim))] flex items-center justify-center shadow-[0_0_0_1px_rgba(53,224,216,0.3),0_6px_18px_var(--accent-glow)]">
-            <svg viewBox="0 0 24 24" fill="none" className="w-[18px] h-[18px]"><path d="M3 14c2 0 2-5 4.5-5S10 18 12 18s2-13 4.5-13S19 12 21 12" stroke="#06201e" strokeWidth="2.2" strokeLinecap="round"/></svg>
-          </div>
+          <SinalLogo size={32} className="shadow-[0_6px_18px_rgba(0,0,0,0.35)]" />
           <div>
             <div className="font-display font-bold text-[19px] tracking-[0.01em] leading-none">Sinal</div>
             <div className="text-[10.5px] text-[var(--muted-2)] tracking-[0.05em] mt-[2px]">sinal &gt; ruído</div>

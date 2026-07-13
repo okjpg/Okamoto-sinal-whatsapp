@@ -16,14 +16,17 @@ import googleRouter from "./google";
 import searchRouter from "./search";
 import refreshRouter from "./refresh";
 import settingsRouter from "./settings";
+import cronRouter from "./cron";
+import telegramRouter from "./telegram";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
 router.use(authRouter);
-// Public webhook must be registered before googleRouter: google uses router.use(requireAuth)
-// without a path, which 401s any request that reaches that router without a prior match.
+// Webhooks públicos antes do googleRouter (requireAuth global).
 router.use(evolutionRouter);
+router.use(cronRouter);
+router.use(telegramRouter);
 router.use(aiRouter);
 router.use(googleRouter);
 router.use(metricsRouter);

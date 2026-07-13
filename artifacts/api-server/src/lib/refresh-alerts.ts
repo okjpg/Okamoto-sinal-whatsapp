@@ -1,4 +1,9 @@
-import { pool, type RefreshRun } from "@workspace/db";
+import type { RefreshRun } from "@workspace/db";
+import { pool } from "@workspace/db";
+import {
+  sendTelegramRefreshAlert,
+  sendTelegramRefreshFailed,
+} from "./telegram-alerts";
 import { OWNER } from "./scope";
 
 export interface RefreshAlertSummary {
@@ -78,10 +83,20 @@ export async function sendRefreshAlerts(
   tenantId: string,
   run: RefreshRun,
 ): Promise<void> {
+  const summary = await collectRefreshAlertSummary(tenantId);
+
+  try {
+    if (run.status === "completed") {
+      await sendTelegramRefreshAlert(tenantId, run, summary);
+    } else if (run.status === "failed") {
+      await sendTelegramRefreshFailed(tenantId, run);
+    }
+  } catch (e) {
+    console.warn(`telegram refresh alert failed: ${(e as Error).message}`);
+  }
+
   const url = process.env.SINAL_ALERT_WEBHOOK_URL?.trim();
   if (!url || run.status !== "completed") return;
-
-  const summary = await collectRefreshAlertSummary(tenantId);
 
   const actionable =
     summary.pendingUnanswered > 0 ||

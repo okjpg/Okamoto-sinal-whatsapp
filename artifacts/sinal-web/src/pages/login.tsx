@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useLogin } from "@/lib/api";
-import { Loader2, Activity } from "lucide-react";
+import { Loader2 } from "lucide-react";
+import { SinalLogo } from "@/components/SinalLogo";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import PasswordInput from "@/components/PasswordInput";
@@ -27,9 +28,7 @@ export default function Login() {
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-[#35E0D8] rounded-full blur-[120px] opacity-[0.03] pointer-events-none" />
       
       <div className="w-full max-w-sm flex flex-col items-center z-10">
-        <div className="w-14 h-14 rounded-xl bg-[radial-gradient(120%_120%_at_30%_20%,var(--accent),var(--accent-dim))] flex items-center justify-center shadow-[0_0_0_1px_rgba(53,224,216,0.3),0_12px_24px_var(--accent-glow)] mb-8">
-          <Activity className="w-7 h-7 text-[#06201e]" />
-        </div>
+        <SinalLogo size={56} className="mb-8 shadow-[0_12px_32px_rgba(0,0,0,0.45)]" />
         
         <h1 className="font-display font-semibold text-3xl tracking-wide mb-2 text-white">Bem-vindo ao Sinal</h1>
         <p className="text-[#8C8C99] text-sm font-mono mb-8">WhatsApp Intelligence + CRM</p>
