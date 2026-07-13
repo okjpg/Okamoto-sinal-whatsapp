@@ -11,6 +11,7 @@
     "backfill-text-full": "tsx ./src/backfill-text-full.ts",
     "backfill-contacts": "tsx ./src/backfill-contacts.ts",
     "db-stats": "tsx ./src/db-stats.ts",
+    "heartbeat": "tsx ./src/heartbeat.ts",
     "build-topics": "tsx ./src/build-topics.ts",
     "build-mentions": "tsx ./src/build-mentions.ts",
     "refresh-all": "tsx ./src/refresh-all.ts",

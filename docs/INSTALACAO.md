@@ -149,6 +149,17 @@ pnpm run typecheck        # checagem completa em todos os pacotes
 pnpm run typecheck:libs   # apenas as libs compostas — rode após editar lib/*
 ```
 
+## 7. Keep-alive diário (plano Free do Supabase)
+
+Projetos **Free** pausam após ~7 dias sem atividade suficiente no banco. A
+migration `0013_project_heartbeat.sql` agenda um job `pg_cron` diário que grava
+em `project_heartbeats` — roda dentro do Postgres, sem cron externo.
+
+1. Dashboard → **Integrations → Cron** → habilite **pg_cron**
+2. Rode `pnpm --filter @workspace/scripts run migrate` (ou execute
+   `scripts/sql/setup-daily-heartbeat.sql` no SQL Editor)
+3. Ping manual opcional: `pnpm --filter @workspace/scripts run heartbeat`
+
 ## Solução de problemas
 
 - **"X environment variable is required"** — você não carregou o `.env` no shell;
