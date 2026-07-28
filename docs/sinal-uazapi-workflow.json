@@ -1,0 +1,66 @@
+{
+  "name": "Sinal - Uazapi WhatsApp Webhook",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-webhook",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Extrai dados do payload Uazapi e mapeia para whatsapp_messages\nconst body = $input.first().json.body;\n\n// Extrai timestamp e converte para ISO string\nconst messageTimestamp = new Date(body.message.messageTimestamp);\n\n// Extrai telefone do sender\nconst senderPhone = body.message.sender_pn.replace('@s.whatsapp.net', '').replace('@lid', '');\nconst contactPhone = body.chat.wa_isGroup ? null : senderPhone;\n\n// Define direção baseado em fromMe\nconst direction = body.message.fromMe ? 'out' : 'in';\n\nreturn [{\n  whatsapp_owner: body.owner,\n  chat_type: body.chat.wa_isGroup ? 'group' : 'private',\n  chat_id: body.chat.wa_chatid,\n  chat_name: body.chat.name,\n  contact_phone: contactPhone,\n  sender_phone: senderPhone,\n  sender_name: body.message.senderName,\n  recipient_phone: body.owner,\n  direction: direction,\n  message_type: body.message.type,\n  message: body.message.text || '',\n  caption: body.message.type !== 'text' ? body.message.content : null,\n  media_url: null,\n  media_mime_type: null,\n  transcription: null,\n  message_id: body.message.messageid,\n  reply_to_message_id: body.message.quoted || null,\n  forwarded: false,\n  reaction: body.message.reaction || null,\n  reacted_to_message_id: null,\n  status: body.message.status || 'received',\n  message_created_at: messageTimestamp.toISOString(),\n  metadata: JSON.stringify({\n    instanceName: body.instanceName,\n    baseUrl: body.BaseUrl,\n    source: body.message.source,\n    wasApi: body.message.wasSentByApi,\n    uazapiToken: body.token\n  })\n}];"
+      },
+      "id": "transform",
+      "name": "Transform Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300],
+      "continueOnFail": false
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO whatsapp_messages (\n  whatsapp_owner,\n  chat_type,\n  chat_id,\n  chat_name,\n  contact_phone,\n  sender_phone,\n  sender_name,\n  recipient_phone,\n  direction,\n  message_type,\n  message,\n  caption,\n  media_url,\n  media_mime_type,\n  transcription,\n  message_id,\n  reply_to_message_id,\n  forwarded,\n  reaction,\n  reacted_to_message_id,\n  status,\n  message_created_at,\n  metadata\n) VALUES (\n  $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,\n  $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,\n  $21, $22, $23\n)\nON CONFLICT (message_id) DO UPDATE SET\n  status = EXCLUDED.status,\n  reaction = EXCLUDED.reaction,\n  metadata = EXCLUDED.metadata;",
+        "queryParams": "={{[\n  $('transform').item.json.whatsapp_owner,\n  $('transform').item.json.chat_type,\n  $('transform').item.json.chat_id,\n  $('transform').item.json.chat_name,\n  $('transform').item.json.contact_phone,\n  $('transform').item.json.sender_phone,\n  $('transform').item.json.sender_name,\n  $('transform').item.json.recipient_phone,\n  $('transform').item.json.direction,\n  $('transform').item.json.message_type,\n  $('transform').item.json.message,\n  $('transform').item.json.caption,\n  $('transform').item.json.media_url,\n  $('transform').item.json.media_mime_type,\n  $('transform').item.json.transcription,\n  $('transform').item.json.message_id,\n  $('transform').item.json.reply_to_message_id,\n  $('transform').item.json.forwarded,\n  $('transform').item.json.reaction,\n  $('transform').item.json.reacted_to_message_id,\n  $('transform').item.json.status,\n  $('transform').item.json.message_created_at,\n  $('transform').item.json.metadata\n]}}",
+        "nodeCredentialType": "postgres"
+      },
+      "id": "postgres",
+      "name": "Insert WhatsApp Message",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [650, 300],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "response": "success"
+      },
+      "id": "response",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [850, 300]
+    }
+  ],
+  "connections": {
+    "webhook": {
+      "main": [[{"node": "transform", "type": "main", "index": 0}]]
+    },
+    "transform": {
+      "main": [[{"node": "postgres", "type": "main", "index": 0}]]
+    },
+    "postgres": {
+      "main": [[{"node": "response", "type": "main", "index": 0}]]
+    }
+  },
+  "active": true,
+  "settings": {}
+}

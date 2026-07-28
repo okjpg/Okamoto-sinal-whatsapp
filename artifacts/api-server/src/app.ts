@@ -1,4 +1,4 @@
-import express, { type Express } from "express";
+import express, { type Express, type Request, type Response } from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import pinoHttp from "pino-http";
@@ -7,25 +7,27 @@ import { logger } from "./lib/logger";
 
 const app: Express = express();
 
-app.use(
-  pinoHttp({
+const pinoHttpMiddleware = (pinoHttp as any)(
+  {
     logger,
     serializers: {
-      req(req) {
+      req(req: Request) {
         return {
-          id: req.id,
+          id: (req as any).id,
           method: req.method,
           url: req.url?.split("?")[0],
         };
       },
-      res(res) {
+      res(res: Response) {
         return {
           statusCode: res.statusCode,
         };
       },
     },
-  }),
+  }
 );
+
+app.use(pinoHttpMiddleware);
 app.use(cors({ credentials: true }));
 app.use(cookieParser());
 app.use(express.json());

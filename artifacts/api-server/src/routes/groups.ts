@@ -9,9 +9,11 @@ router.use(requireAuth);
 // List groups by activity (derived live from whatsapp_messages, read-only).
 // Each row carries is_support so the UI can show / toggle the "suporte/ruído"
 // flag, read from the tenant-scoped support_groups table.
+// Groups matching exclude rules (by name pattern) are hidden unless ?show_excluded=1.
 router.get("/groups", async (req: AuthedRequest, res) => {
   const t = req.auth!.tenantId;
   const limit = Math.min(Number(req.query.limit ?? 50), 200);
+  const showExcluded = req.query.show_excluded === "1";
   const { rows } = await pool.query(
     `select g.chat_id,
             g.name,
@@ -31,9 +33,13 @@ router.get("/groups", async (req: AuthedRequest, res) => {
        ) g
        left join support_groups sg
               on sg.tenant_id = $2 and sg.chat_id = g.chat_id
+      where ($4::bool or not exists (
+        select 1 from group_exclude_rules er
+         where er.tenant_id = $2 and g.name ilike '%' || er.pattern || '%'
+      ))
       order by g.message_count desc
       limit $3`,
-    [OWNER, t, limit],
+    [OWNER, t, limit, showExcluded],
   );
   res.json({ groups: rows });
 });
@@ -68,6 +74,57 @@ router.delete("/groups/:chatId/support", async (req: AuthedRequest, res) => {
   await pool.query(
     `delete from support_groups where tenant_id = $1 and chat_id = $2`,
     [t, chatId],
+  );
+  res.json({ ok: true });
+});
+
+// --- Group exclude rules (filter groups by name pattern) ---
+
+// List all exclude rules for the tenant.
+router.get("/groups/exclude-rules", async (req: AuthedRequest, res) => {
+  const t = req.auth!.tenantId;
+  const { rows } = await pool.query(
+    `select id, pattern, created_at from group_exclude_rules
+      where tenant_id = $1 order by created_at`,
+    [t],
+  );
+  res.json({ rules: rows });
+});
+
+// Add a new exclude rule.
+router.post("/groups/exclude-rules", async (req: AuthedRequest, res) => {
+  const t = req.auth!.tenantId;
+  const { pattern } = req.body as { pattern?: string };
+  if (!pattern?.trim()) {
+    return res.status(400).json({ error: "pattern is required" });
+  }
+  const { rows } = await pool.query(
+    `insert into group_exclude_rules (tenant_id, pattern)
+     values ($1, $2)
+     on conflict (tenant_id, pattern) do nothing
+     returning id, pattern, created_at`,
+    [t, pattern.trim()],
+  );
+  // Also auto-mark matching groups as support_groups for topic/mention exclusion
+  await pool.query(
+    `insert into support_groups (tenant_id, chat_id, name)
+     select $1, chat_id, max(chat_name)
+       from whatsapp_messages
+      where whatsapp_owner = $2 and chat_type = 'group' and chat_id is not null
+        and chat_name ilike '%' || $3 || '%'
+      group by chat_id
+     on conflict (tenant_id, chat_id) do update set name = excluded.name`,
+    [t, OWNER, pattern.trim()],
+  );
+  return res.json({ rule: rows[0] ?? null, ok: true });
+});
+
+// Delete an exclude rule.
+router.delete("/groups/exclude-rules/:id", async (req: AuthedRequest, res) => {
+  const t = req.auth!.tenantId;
+  await pool.query(
+    `delete from group_exclude_rules where tenant_id = $1 and id = $2`,
+    [t, req.params.id],
   );
   res.json({ ok: true });
 });

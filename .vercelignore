@@ -1,0 +1,10 @@
+.git
+.gitignore
+.env
+.env.local
+.env.*.local
+node_modules
+.pnpm-store
+docs
+CONTRIBUTING.md
+README.md

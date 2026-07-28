@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "framework": null,
+  "buildCommand": "node artifacts/api-server/build-vercel.mjs && PORT=3000 BASE_PATH=/ pnpm --filter @workspace/sinal-web run build",
+  "outputDirectory": "artifacts/sinal-web/dist/public",
+  "functions": {
+    "api/index.mjs": {
+      "includeFiles": "api/**"
+    }
+  },
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/index.mjs" }
+  ]
+}

@@ -5,7 +5,7 @@ import { Loader2, Radio, Zap, Bookmark, MessageSquare, Flame, Users, TrendingUp,
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 
 export default function Grupos() {
-  const { data: groups, isLoading: loadingG } = useGroups(20);
+  const { data: groups, isLoading: loadingG } = useGroups(200);
   const { data: topics, isLoading: loadingT } = useTopics({ scope: "group", crossgroup: true });
   const setSupport = useSetGroupSupport();
   

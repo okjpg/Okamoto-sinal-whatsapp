@@ -55,11 +55,9 @@ function schema() {
   };
 }
 
-/** Cluster raw topic phrases into canonical named pautas. */
-export async function clusterTopics(
-  rawPhrases: string[],
-): Promise<TopicCluster[]> {
-  if (rawPhrases.length === 0) return [];
+const CHUNK_SIZE = 150;
+
+async function clusterChunk(phrases: string[]): Promise<TopicCluster[]> {
   const completion = await getClient().chat.completions.create({
     model: CLASSIFY_MODEL,
     temperature: 0,
@@ -70,7 +68,7 @@ export async function clusterTopics(
         role: "user",
         content:
           "Agrupe as seguintes frases-tema em pautas canônicas:\n\n" +
-          JSON.stringify(rawPhrases),
+          JSON.stringify(phrases),
       },
     ],
   });
@@ -78,4 +76,41 @@ export async function clusterTopics(
   if (!content) throw new Error("Empty completion from OpenAI (clusterTopics).");
   const parsed = JSON.parse(content) as { clusters: TopicCluster[] };
   return parsed.clusters ?? [];
+}
+
+/** Cluster raw topic phrases into canonical named pautas. */
+export async function clusterTopics(
+  rawPhrases: string[],
+): Promise<TopicCluster[]> {
+  if (rawPhrases.length === 0) return [];
+
+  // If small enough, cluster in one call
+  if (rawPhrases.length <= CHUNK_SIZE) {
+    return clusterChunk(rawPhrases);
+  }
+
+  // Split into chunks, cluster each, then merge overlapping labels
+  const allClusters: TopicCluster[] = [];
+  for (let i = 0; i < rawPhrases.length; i += CHUNK_SIZE) {
+    const chunk = rawPhrases.slice(i, i + CHUNK_SIZE);
+    const clusters = await clusterChunk(chunk);
+    allClusters.push(...clusters);
+  }
+
+  // Merge clusters with similar labels (case-insensitive)
+  const merged = new Map<string, TopicCluster>();
+  for (const c of allClusters) {
+    const key = c.label.toLowerCase();
+    const existing = merged.get(key);
+    if (existing) {
+      existing.members.push(...c.members);
+      // Keep the longer summary
+      if (c.summary.length > existing.summary.length) {
+        existing.summary = c.summary;
+      }
+    } else {
+      merged.set(key, { ...c, members: [...c.members] });
+    }
+  }
+  return [...merged.values()];
 }
